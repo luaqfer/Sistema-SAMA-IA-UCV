@@ -5,6 +5,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
 
+import sys
+import os
+# Añadimos el directorio padre (02_capa_logica) al PATH para poder importar 'core'
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
 # Importamos el motor de IA desde nuestra capa de lógica de negocio (Core)
 from core.ia_motor_difuso import motor_ia
 
@@ -37,8 +42,10 @@ class InspeccionRequest(BaseModel):
 
 # Función auxiliar reutilizable para conectar con SQLite
 def get_db_connection():
-    # Buscamos el archivo en la subcarpeta db/ según la estructura estructurada
-    conn = sqlite3.connect('db/eam_ia_database.db')
+    # Resolvemos la ruta a 03_capa_datos dinámicamente según la nueva arquitectura
+    base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    db_path = os.path.join(base_dir, '03_capa_datos', 'database', 'eam_ia_database.db')
+    conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row # Permite recuperar las columnas por su nombre string
     return conn
 
