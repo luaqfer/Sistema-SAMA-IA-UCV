@@ -33,7 +33,7 @@
     </nav>
 
     <main class="max-w-7xl mx-auto mt-8 p-4">
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
             <div class="bg-white p-6 rounded-xl shadow border-l-4 border-blue-500">
                 <h3 class="text-slate-500 text-sm font-bold uppercase">Total Activos</h3>
                 <p id="stat-total" class="text-3xl font-bold text-slate-800 mt-2">--</p>
@@ -42,8 +42,12 @@
                 <h3 class="text-slate-500 text-sm font-bold uppercase">Operativos</h3>
                 <p id="stat-operativos" class="text-3xl font-bold text-green-600 mt-2">--</p>
             </div>
+            <div class="bg-white p-6 rounded-xl shadow border-l-4 border-yellow-500">
+                <h3 class="text-slate-500 text-sm font-bold uppercase">Bajo Observación</h3>
+                <p id="stat-observacion" class="text-3xl font-bold text-yellow-600 mt-2">--</p>
+            </div>
             <div class="bg-white p-6 rounded-xl shadow border-l-4 border-red-500" id="card-bloqueados">
-                <h3 class="text-slate-500 text-sm font-bold uppercase">Bloqueados por IA</h3>
+                <h3 class="text-slate-500 text-sm font-bold uppercase">Críticos</h3>
                 <p id="stat-bloqueados" class="text-3xl font-bold text-red-600 mt-2">--</p>
             </div>
         </div>
@@ -178,6 +182,18 @@
                     <div>
                         <label class="block text-slate-700 text-sm font-bold mb-1">N° Serie</label>
                         <input type="text" id="nuevo-serie" required placeholder="SN-12345" class="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                    </div>
+                    <div class="col-span-2">
+                        <label class="block text-slate-700 text-sm font-bold mb-1">Fecha de Compra</label>
+                        <input type="date" id="nuevo-fecha-compra" required class="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none">
+                    </div>
+                    <div class="col-span-2">
+                        <label class="block text-slate-700 text-sm font-bold mb-1">Fotografía del Activo (Opcional)</label>
+                        <input type="file" id="nuevo-foto" accept="image/*" class="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none text-sm">
+                    </div>
+                    <div class="col-span-2">
+                        <label class="block text-slate-700 text-sm font-bold mb-1">Manual PDF (Opcional)</label>
+                        <input type="file" id="nuevo-manual" accept=".pdf" class="w-full bg-slate-50 border border-slate-300 rounded-lg p-2 focus:ring-2 focus:ring-blue-500 outline-none text-sm">
                     </div>
                 </div>
                 <button type="submit" id="btn-submit-nuevo" class="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-xl transition shadow mt-4">

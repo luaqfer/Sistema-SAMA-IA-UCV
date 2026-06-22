@@ -1,9 +1,10 @@
 import sqlite3
 from datetime import datetime
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Form, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 import uvicorn
+import shutil
 
 import sys
 import os
@@ -42,6 +43,7 @@ class NuevoActivoRequest(BaseModel):
     ubicacion: str
     marca: str
     num_serie: str
+    fecha_compra: str
 
 class InspeccionRequest(BaseModel):
     id_activo: int
@@ -67,6 +69,35 @@ def check_and_migrate_db():
         conn.commit()
     except sqlite3.OperationalError:
         pass # Las columnas ya existen
+    try:
+        cursor.execute("ALTER TABLE ACTIVOS ADD COLUMN foto_path TEXT")
+        cursor.execute("ALTER TABLE ACTIVOS ADD COLUMN manual_path TEXT")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass # Las columnas ya existen
+    try:
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS MOVIMIENTOS_ACTIVOS (
+            id_movimiento INTEGER PRIMARY KEY AUTOINCREMENT,
+            id_activo INTEGER NOT NULL,
+            fecha_movimiento TEXT NOT NULL,
+            tipo_movimiento TEXT NOT NULL
+        )""")
+        cursor.execute("""
+        CREATE TABLE IF NOT EXISTS HISTORIAL_INSPECCIONES_IA (
+            id_historial INTEGER PRIMARY KEY AUTOINCREMENT,
+            id_activo INTEGER NOT NULL,
+            id_usuario INTEGER NOT NULL,
+            fecha_hora_proceso TEXT NOT NULL,
+            var_frecuencia_uso TEXT NOT NULL,
+            var_anomalia_operativa TEXT NOT NULL,
+            var_integridad_estruct TEXT NOT NULL,
+            resultado_indice_salud REAL NOT NULL,
+            alerta_bloqueo_disparada INTEGER NOT NULL
+        )""")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass
     finally:
         conn.close()
 
@@ -78,36 +109,76 @@ check_and_migrate_db()
 # ---------------------------------------------------------
 
 @app.post("/api/activos")
-def registrar_nuevo_activo(activo: NuevoActivoRequest):
-    """Registra un nuevo activo en el sistema con estado inicial OPERATIVO."""
+def registrar_nuevo_activo(
+    codigo_qr: str = Form(...),
+    nombre_activo: str = Form(...),
+    id_categoria: int = Form(...),
+    valor_adquisicion: float = Form(...),
+    ubicacion: str = Form(...),
+    marca: str = Form(...),
+    num_serie: str = Form(...),
+    fecha_compra: str = Form(...),
+    foto: UploadFile = File(None),
+    manual: UploadFile = File(None)
+):
+    """Registra un nuevo activo en el sistema incluyendo la subida física de foto y manual."""
     try:
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        
+        # Guardar foto si existe
+        foto_guardada = None
+        if foto and foto.filename:
+            fotos_dir = os.path.join(base_dir, 'data', 'assets', 'fotos')
+            os.makedirs(fotos_dir, exist_ok=True)
+            ext = os.path.splitext(foto.filename)[1]
+            foto_filename = f"foto_{codigo_qr}{ext}"
+            foto_path_abs = os.path.join(fotos_dir, foto_filename)
+            with open(foto_path_abs, "wb") as buffer:
+                shutil.copyfileobj(foto.file, buffer)
+            foto_guardada = f"data/assets/fotos/{foto_filename}"
+
+        # Guardar manual si existe
+        manual_guardado = None
+        if manual and manual.filename:
+            manuales_dir = os.path.join(base_dir, 'data', 'assets', 'manuales')
+            os.makedirs(manuales_dir, exist_ok=True)
+            ext = os.path.splitext(manual.filename)[1]
+            manual_filename = f"manual_{codigo_qr}{ext}"
+            manual_path_abs = os.path.join(manuales_dir, manual_filename)
+            with open(manual_path_abs, "wb") as buffer:
+                shutil.copyfileobj(manual.file, buffer)
+            manual_guardado = f"data/assets/manuales/{manual_filename}"
+
         conn = get_db_connection()
         cursor = conn.cursor()
         
         # Validar si el QR ya existe
-        cursor.execute("SELECT id_activo FROM ACTIVOS WHERE codigo_qr = ?", (activo.codigo_qr,))
+        cursor.execute("SELECT id_activo FROM ACTIVOS WHERE codigo_qr = ?", (codigo_qr,))
         if cursor.fetchone():
             conn.close()
             raise HTTPException(status_code=400, detail="El Código QR ya está registrado en otro activo.")
 
         cursor.execute("""
-            INSERT INTO ACTIVOS (codigo_qr, nombre_activo, id_categoria, valor_adquisicion, estado_operativo, ubicacion, marca, num_serie)
-            VALUES (?, ?, ?, ?, 'OPERATIVO', ?, ?, ?)
+            INSERT INTO ACTIVOS (codigo_qr, nombre_activo, id_categoria, valor_adquisicion, estado_operativo, ubicacion, marca, num_serie, fecha_compra, foto_path, manual_path)
+            VALUES (?, ?, ?, ?, 'OPERATIVO', ?, ?, ?, ?, ?, ?)
         """, (
-            activo.codigo_qr, 
-            activo.nombre_activo, 
-            activo.id_categoria, 
-            activo.valor_adquisicion,
-            activo.ubicacion,
-            activo.marca,
-            activo.num_serie
+            codigo_qr, 
+            nombre_activo, 
+            id_categoria, 
+            valor_adquisicion,
+            ubicacion,
+            marca,
+            num_serie,
+            fecha_compra,
+            foto_guardada,
+            manual_guardado
         ))
         
         conn.commit()
         nuevo_id = cursor.lastrowid
         conn.close()
         
-        return {"status": "success", "mensaje": "Activo registrado correctamente", "id_activo": nuevo_id}
+        return {"status": "success", "mensaje": "Activo y archivos registrados correctamente", "id_activo": nuevo_id}
     except HTTPException as he:
         raise he
     except Exception as e:

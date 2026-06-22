@@ -17,11 +17,22 @@ async function cargarActivos() {
         
         let tabla = document.getElementById('tabla-activos');
         tabla.innerHTML = '';
-        let operativos = 0, bloqueados = 0;
+        let operativos = 0, observacion = 0, bloqueados = 0;
 
         activos.forEach(activo => {
-            let badgeClass = activo.estado_operativo === "OPERATIVO" ? "bg-green-100 text-green-800" : "bg-red-100 text-red-800 font-black border border-red-300 pulse-red";
-            if(activo.estado_operativo === "OPERATIVO") operativos++; else bloqueados++;
+            let badgeClass = "";
+            let estado = activo.estado_operativo.toUpperCase();
+            
+            if(estado === "OPERATIVO") {
+                badgeClass = "bg-green-100 text-green-800";
+                operativos++;
+            } else if (estado.includes("OBSERVACION") || estado.includes("MANTENIMIENTO")) {
+                badgeClass = "bg-yellow-100 text-yellow-800 font-bold";
+                observacion++;
+            } else {
+                badgeClass = "bg-red-100 text-red-800 font-black border border-red-300 pulse-red";
+                bloqueados++;
+            }
 
             tabla.innerHTML += `
                 <tr class="hover:bg-slate-50">
@@ -40,6 +51,7 @@ async function cargarActivos() {
 
         document.getElementById('stat-total').innerText = activos.length;
         document.getElementById('stat-operativos').innerText = operativos;
+        document.getElementById('stat-observacion').innerText = observacion;
         document.getElementById('stat-bloqueados').innerText = bloqueados;
         document.getElementById('card-bloqueados').className = bloqueados > 0 ? "bg-white p-6 rounded-xl shadow border-l-4 border-red-500 pulse-red" : "bg-white p-6 rounded-xl shadow border-l-4 border-red-500";
     } catch (error) {
@@ -122,6 +134,10 @@ async function ejecutarDiagnosticoIA(event) {
 
         const data = await response.json();
 
+        if (!response.ok) {
+            throw new Error(data.detail || "Error en la evaluación IA");
+        }
+
         document.getElementById('form-ia').classList.add('hidden');
         const panelResultados = document.getElementById('panel-resultado-ia');
         const semaforoHeader = document.getElementById('semaforo-header');
@@ -163,20 +179,29 @@ async function registrarNuevoActivo(event) {
     btnSubmit.disabled = true;
 
     try {
-        const payload = {
-            codigo_qr: document.getElementById('nuevo-qr').value.trim(),
-            nombre_activo: document.getElementById('nuevo-nombre').value.trim(),
-            id_categoria: parseInt(document.getElementById('nuevo-categoria').value),
-            valor_adquisicion: parseFloat(document.getElementById('nuevo-valor').value),
-            ubicacion: document.getElementById('nuevo-ubicacion').value.trim(),
-            marca: document.getElementById('nuevo-marca').value.trim(),
-            num_serie: document.getElementById('nuevo-serie').value.trim()
-        };
+        const formData = new FormData();
+        formData.append('codigo_qr', document.getElementById('nuevo-qr').value.trim());
+        formData.append('nombre_activo', document.getElementById('nuevo-nombre').value.trim());
+        formData.append('id_categoria', document.getElementById('nuevo-categoria').value);
+        formData.append('valor_adquisicion', document.getElementById('nuevo-valor').value);
+        formData.append('ubicacion', document.getElementById('nuevo-ubicacion').value.trim());
+        formData.append('marca', document.getElementById('nuevo-marca').value.trim());
+        formData.append('num_serie', document.getElementById('nuevo-serie').value.trim());
+        formData.append('fecha_compra', document.getElementById('nuevo-fecha-compra').value);
+        
+        const fotoInput = document.getElementById('nuevo-foto');
+        if (fotoInput.files.length > 0) {
+            formData.append('foto', fotoInput.files[0]);
+        }
+        
+        const manualInput = document.getElementById('nuevo-manual');
+        if (manualInput.files.length > 0) {
+            formData.append('manual', manualInput.files[0]);
+        }
 
         const response = await fetch(`${API_URL}/api/activos`, {
             method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
+            body: formData
         });
 
         const data = await response.json();
