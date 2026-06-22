@@ -34,24 +34,84 @@ app.add_middleware(
 )
 
 # Modelos de Datos de Entrada (Pydantic para validación estricta de payloads)
+class NuevoActivoRequest(BaseModel):
+    codigo_qr: str
+    nombre_activo: str
+    id_categoria: int
+    valor_adquisicion: float
+    ubicacion: str
+    marca: str
+    num_serie: str
+
 class InspeccionRequest(BaseModel):
     id_activo: int
     id_usuario: int
     anomalia_operativa: float   # Escala numérica de 0 a 10 desde la Web
     integridad_estructural: float # Escala numérica de 0 a 10 desde la Web
 
-# Función auxiliar reutilizable para conectar con SQLite
 def get_db_connection():
-    # Resolvemos la ruta a 03_capa_datos dinámicamente según la nueva arquitectura
+    # Resolvemos la ruta a data dinámicamente según la nueva arquitectura
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-    db_path = os.path.join(base_dir, '03_capa_datos', 'database', 'eam_ia_database.db')
+    db_path = os.path.join(base_dir, 'data', 'database', 'eam_ia_database.db')
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row # Permite recuperar las columnas por su nombre string
     return conn
 
+def check_and_migrate_db():
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    try:
+        cursor.execute("ALTER TABLE ACTIVOS ADD COLUMN ubicacion TEXT DEFAULT 'No especificada'")
+        cursor.execute("ALTER TABLE ACTIVOS ADD COLUMN marca TEXT DEFAULT 'Desconocida'")
+        cursor.execute("ALTER TABLE ACTIVOS ADD COLUMN num_serie TEXT DEFAULT 'S/N'")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass # Las columnas ya existen
+    finally:
+        conn.close()
+
+# Ejecutar migración al vuelo para garantizar que existan las nuevas columnas
+check_and_migrate_db()
+
 # ---------------------------------------------------------
 # ENDPOINTS PRINCIPALES (CAPA DE SERVICIOS / API GATEWAY)
 # ---------------------------------------------------------
+
+@app.post("/api/activos")
+def registrar_nuevo_activo(activo: NuevoActivoRequest):
+    """Registra un nuevo activo en el sistema con estado inicial OPERATIVO."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Validar si el QR ya existe
+        cursor.execute("SELECT id_activo FROM ACTIVOS WHERE codigo_qr = ?", (activo.codigo_qr,))
+        if cursor.fetchone():
+            conn.close()
+            raise HTTPException(status_code=400, detail="El Código QR ya está registrado en otro activo.")
+
+        cursor.execute("""
+            INSERT INTO ACTIVOS (codigo_qr, nombre_activo, id_categoria, valor_adquisicion, estado_operativo, ubicacion, marca, num_serie)
+            VALUES (?, ?, ?, ?, 'OPERATIVO', ?, ?, ?)
+        """, (
+            activo.codigo_qr, 
+            activo.nombre_activo, 
+            activo.id_categoria, 
+            activo.valor_adquisicion,
+            activo.ubicacion,
+            activo.marca,
+            activo.num_serie
+        ))
+        
+        conn.commit()
+        nuevo_id = cursor.lastrowid
+        conn.close()
+        
+        return {"status": "success", "mensaje": "Activo registrado correctamente", "id_activo": nuevo_id}
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al registrar activo: {str(e)}")
 
 @app.get("/")
 def health_check():

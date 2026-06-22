@@ -146,5 +146,56 @@ async function ejecutarDiagnosticoIA(event) {
     }
 }
 
+// 4. REGISTRO DE NUEVOS ACTIVOS
+function abrirModalNuevoActivo() {
+    document.getElementById('modal-nuevo-activo').classList.remove('hidden');
+}
+
+function cerrarModalNuevoActivo() {
+    document.getElementById('modal-nuevo-activo').classList.add('hidden');
+    document.getElementById('form-nuevo-activo').reset();
+}
+
+async function registrarNuevoActivo(event) {
+    event.preventDefault();
+    const btnSubmit = document.getElementById('btn-submit-nuevo');
+    btnSubmit.innerText = "Guardando...";
+    btnSubmit.disabled = true;
+
+    try {
+        const payload = {
+            codigo_qr: document.getElementById('nuevo-qr').value.trim(),
+            nombre_activo: document.getElementById('nuevo-nombre').value.trim(),
+            id_categoria: parseInt(document.getElementById('nuevo-categoria').value),
+            valor_adquisicion: parseFloat(document.getElementById('nuevo-valor').value),
+            ubicacion: document.getElementById('nuevo-ubicacion').value.trim(),
+            marca: document.getElementById('nuevo-marca').value.trim(),
+            num_serie: document.getElementById('nuevo-serie').value.trim()
+        };
+
+        const response = await fetch(`${API_URL}/api/activos`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.detail || "Error al registrar el activo.");
+        }
+
+        alert("✅ " + data.mensaje);
+        cerrarModalNuevoActivo();
+        cargarActivos(); // Refrescar la tabla automáticamente
+
+    } catch (error) {
+        alert("⚠️ Fallo en el registro: " + error.message);
+    } finally {
+        btnSubmit.innerText = "💾 Guardar Activo (Operativo)";
+        btnSubmit.disabled = false;
+    }
+}
+
 // Inicializar al cargar la página
 window.onload = cargarActivos;
