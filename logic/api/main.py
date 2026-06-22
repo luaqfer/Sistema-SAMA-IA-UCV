@@ -77,6 +77,11 @@ class UsuarioUpdate(BaseModel):
     id_rol: int
     estado_cuenta: int
 
+class MovimientoQRRequest(BaseModel):
+    qr_activo: str
+    qr_personal: str
+
+
 def get_db_connection():
     # Resolvemos la ruta a data dinámicamente según la nueva arquitectura
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -102,8 +107,15 @@ def check_and_migrate_db():
     except sqlite3.OperationalError:
         pass # Las columnas ya existen
     try:
+        cursor.execute("ALTER TABLE ACTIVOS ADD COLUMN estado_uso TEXT DEFAULT 'DISPONIBLE'")
+        cursor.execute("ALTER TABLE ACTIVOS ADD COLUMN id_usuario_responsable INTEGER")
+        conn.commit()
+    except sqlite3.OperationalError:
+        pass # Las columnas ya existen
+    try:
+        cursor.execute("DROP TABLE IF EXISTS MOVIMIENTOS_ACTIVOS")
         cursor.execute("""
-        CREATE TABLE IF NOT EXISTS MOVIMIENTOS_ACTIVOS (
+        CREATE TABLE MOVIMIENTOS_ACTIVOS (
             id_movimiento INTEGER PRIMARY KEY AUTOINCREMENT,
             id_activo INTEGER NOT NULL,
             fecha_movimiento TEXT NOT NULL,
@@ -168,7 +180,7 @@ def login(request: LoginRequest):
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute(
-            """SELECT U.id_usuario, U.nombres_completos as nombre_usuario, U.dni, R.nombre_rol as rol 
+            """SELECT U.id_usuario, U.nombres_completos as nombre_usuario, U.dni, U.id_rol, R.nombre_rol as rol 
                FROM USUARIOS U 
                JOIN ROLES R ON U.id_rol = R.id_rol 
                WHERE U.username = ? AND U.pin = ? AND U.estado_cuenta = 1""",
@@ -248,6 +260,78 @@ def eliminar_usuario(id_usuario: int):
         conn.commit()
         conn.close()
         return {"mensaje": "Usuario eliminado exitosamente"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/activos")
+def obtener_activos():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT *, COALESCE(estado_uso, 'DISPONIBLE') as estado_uso, id_usuario_responsable FROM ACTIVOS")
+        activos = [dict(row) for row in cursor.fetchall()]
+        
+        # Enriquecer con el nombre del usuario responsable si lo hay
+        for activo in activos:
+            if activo['id_usuario_responsable']:
+                cursor.execute("SELECT nombres_completos FROM USUARIOS WHERE id_usuario = ?", (activo['id_usuario_responsable'],))
+                user = cursor.fetchone()
+                activo['usuario_responsable_nombre'] = user['nombres_completos'] if user else 'Desconocido'
+            else:
+                activo['usuario_responsable_nombre'] = None
+
+        conn.close()
+        return activos
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/movimientos/qr")
+def procesar_movimiento_qr(req: MovimientoQRRequest):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # 1. Verificar Activo
+        cursor.execute("SELECT id_activo, nombre_activo, COALESCE(estado_uso, 'DISPONIBLE') as estado_uso FROM ACTIVOS WHERE codigo_qr = ?", (req.qr_activo,))
+        activo = cursor.fetchone()
+        if not activo:
+            raise HTTPException(status_code=404, detail="El QR del activo no corresponde a ninguna máquina registrada.")
+            
+        # 2. Verificar Usuario (Personal) usando su DNI
+        cursor.execute("SELECT id_usuario, nombres_completos, estado_cuenta FROM USUARIOS WHERE dni = ?", (req.qr_personal,))
+        usuario = cursor.fetchone()
+        if not usuario:
+            raise HTTPException(status_code=404, detail="El QR de personal (DNI) no está registrado.")
+        if usuario['estado_cuenta'] != 1:
+            raise HTTPException(status_code=403, detail="El usuario se encuentra desactivado.")
+            
+        estado_actual = activo['estado_uso']
+        fecha_actual = datetime.now().isoformat()
+        
+        # 3. Lógica de Cambio de Estado
+        if estado_actual == 'DISPONIBLE':
+            # RETIRO
+            cursor.execute("UPDATE ACTIVOS SET estado_uso = 'EN USO', id_usuario_responsable = ? WHERE id_activo = ?", 
+                           (usuario['id_usuario'], activo['id_activo']))
+            cursor.execute("INSERT INTO MOVIMIENTOS_ACTIVOS (id_activo, fecha_movimiento, tipo_movimiento) VALUES (?, ?, ?)",
+                           (activo['id_activo'], fecha_actual, 'RETIRO'))
+            mensaje = f"Activo '{activo['nombre_activo']}' retirado exitosamente por {usuario['nombres_completos']}."
+            accion = "RETIRO"
+        else:
+            # DEVOLUCION
+            cursor.execute("UPDATE ACTIVOS SET estado_uso = 'DISPONIBLE', id_usuario_responsable = NULL WHERE id_activo = ?", 
+                           (activo['id_activo'],))
+            cursor.execute("INSERT INTO MOVIMIENTOS_ACTIVOS (id_activo, fecha_movimiento, tipo_movimiento) VALUES (?, ?, ?)",
+                           (activo['id_activo'], fecha_actual, 'DEVOLUCION'))
+            mensaje = f"Activo '{activo['nombre_activo']}' devuelto exitosamente por {usuario['nombres_completos']}."
+            accion = "DEVOLUCION"
+
+        conn.commit()
+        conn.close()
+        return {"mensaje": mensaje, "accion": accion}
+        
+    except HTTPException as he:
+        raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

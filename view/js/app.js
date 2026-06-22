@@ -36,12 +36,19 @@ async function cargarActivos() {
                 bloqueados++;
             }
 
+            let badgeUsoClass = activo.estado_uso === "DISPONIBLE" ? "bg-blue-100 text-blue-800" : "bg-orange-100 text-orange-800";
+            let responsableTxt = activo.estado_uso === "EN USO" && activo.usuario_responsable_nombre ? `<br><span class="text-[10px] font-bold text-slate-500 uppercase">Resp: ${activo.usuario_responsable_nombre}</span>` : "";
+
             tabla.innerHTML += `
                 <tr class="hover:bg-slate-50">
                     <td class="p-4 font-mono text-slate-500 text-xs">${activo.codigo_qr}</td>
                     <td class="p-4 font-bold text-slate-800">${activo.nombre_activo}</td>
                     <td class="p-4 text-slate-600 font-mono text-xs">S/ ${activo.valor_adquisicion.toFixed(2)}</td>
                     <td class="p-4"><span class="px-3 py-1 rounded-full text-xs ${badgeClass}">${activo.estado_operativo}</span></td>
+                    <td class="p-4">
+                        <span class="px-3 py-1 rounded-full text-xs font-bold ${badgeUsoClass}">${activo.estado_uso}</span>
+                        ${responsableTxt}
+                    </td>
                     <td class="p-4 text-center space-x-2">
                         <button onclick="abrirModalDetalle(${activo.id_activo})" class="bg-slate-600 hover:bg-slate-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-sm inline-flex items-center gap-1">
                             📄 Detalles
@@ -65,25 +72,69 @@ async function cargarActivos() {
 }
 
 // 2. CONTROL DEL ESCÁNER QR Y BÚSQUEDA
+let estadoEscaner = 0; // 0: inactivo, 1: escaneando activo, 2: escaneando personal
+let qrActivoTemporal = null;
+
 function buscarActivoManual() {
     let qrBuscado = document.getElementById('input-qr-manual').value.trim();
     procesarCodigoEscaneado(qrBuscado);
 }
 
 function abrirEscaner() {
+    estadoEscaner = 1;
+    qrActivoTemporal = null;
+    
+    let instruccion = document.getElementById('scanner-instruccion');
+    instruccion.innerText = "Paso 1: Escanee el QR de la Máquina/Activo";
+    instruccion.className = "text-blue-600 font-bold mb-4 bg-blue-50 p-2 rounded-lg border border-blue-200";
+    
     document.getElementById('modal-scanner').classList.remove('hidden');
     html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: {width: 250, height: 250} }, false);
     html5QrcodeScanner.render(onScanSuccess, onScanFailure);
 }
 
 function cerrarEscaner() {
+    estadoEscaner = 0;
+    qrActivoTemporal = null;
     document.getElementById('modal-scanner').classList.add('hidden');
     if(html5QrcodeScanner) { html5QrcodeScanner.clear(); }
 }
 
-function onScanSuccess(decodedText, decodedResult) {
-    cerrarEscaner();
-    procesarCodigoEscaneado(decodedText);
+async function onScanSuccess(decodedText, decodedResult) {
+    if (estadoEscaner === 1) {
+        qrActivoTemporal = decodedText;
+        estadoEscaner = 2;
+        
+        let instruccion = document.getElementById('scanner-instruccion');
+        instruccion.innerText = "Paso 2: Escanee el QR de Personal (DNI)";
+        instruccion.className = "text-green-600 font-bold mb-4 bg-green-50 p-2 rounded-lg border border-green-200";
+        
+        // El escáner continuará ejecutándose esperando el QR del personal
+    } else if (estadoEscaner === 2) {
+        const qrPersonalTemporal = decodedText;
+        cerrarEscaner(); // Cerramos y detenemos cámara inmediatamente
+        await registrarMovimientoActivo(qrActivoTemporal, qrPersonalTemporal);
+    }
+}
+
+async function registrarMovimientoActivo(qrActivo, qrPersonal) {
+    try {
+        const payload = { qr_activo: qrActivo, qr_personal: qrPersonal };
+        const response = await fetch(`${API_URL}/api/movimientos/qr`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) throw new Error(data.detail);
+        
+        alert(`✅ ${data.mensaje}`);
+        cargarActivos(); // Refrescar la tabla para ver el cambio de disponibilidad
+    } catch (error) {
+        alert(`❌ Error en el movimiento: ${error.message}`);
+    }
 }
 
 function onScanFailure(error) { /* Ignorar errores de enfoque */ }
@@ -232,6 +283,20 @@ async function registrarNuevoActivo(event) {
 }
 
 // 5. GESTIÓN DE USUARIOS Y SESIÓN
+function toggleMenu() {
+    const menu = document.getElementById('dropdown-menu');
+    menu.classList.toggle('hidden');
+}
+
+// Cerrar el menú si se hace clic fuera de él
+document.addEventListener('click', function(event) {
+    const menu = document.getElementById('dropdown-menu');
+    const button = event.target.closest('button[onclick="toggleMenu()"]');
+    if (!button && !menu.contains(event.target) && !menu.classList.contains('hidden')) {
+        menu.classList.add('hidden');
+    }
+});
+
 async function ejecutarLogin(event) {
     event.preventDefault();
     const btn = document.getElementById('btn-login');
@@ -260,13 +325,19 @@ async function ejecutarLogin(event) {
         document.getElementById('nav-user-name').innerText = usuarioActual.nombre_usuario.toUpperCase();
         document.getElementById('nav-user-role').innerText = usuarioActual.rol;
 
-        // Aplicar permisos de Rol
-        if (usuarioActual.rol === 'OPERARIO') {
+        // Aplicar permisos de Rol (1: Admin, 2: Supervisor, 3: Operario)
+        if (usuarioActual.id_rol === 3) {
             document.getElementById('btn-registrar-activo').classList.add('hidden');
             document.getElementById('btn-refrescar-bd').classList.add('hidden');
         } else {
             document.getElementById('btn-registrar-activo').classList.remove('hidden');
             document.getElementById('btn-refrescar-bd').classList.remove('hidden');
+        }
+        
+        if (usuarioActual.id_rol === 1) {
+            document.getElementById('btn-gestionar-usuarios').classList.remove('hidden');
+        } else {
+            document.getElementById('btn-gestionar-usuarios').classList.add('hidden');
         }
 
         cargarActivos(); // Cargar datos ahora que hay sesión
@@ -285,6 +356,146 @@ function cerrarSesion() {
     document.getElementById('pantalla-login').classList.remove('hidden');
     document.getElementById('body-main').classList.add('overflow-hidden');
     document.getElementById('form-login').reset();
+    document.getElementById('btn-gestionar-usuarios').classList.add('hidden');
+}
+
+// --- MI PERFIL ---
+function abrirModalMiPerfil() {
+    if(!usuarioActual) return;
+    document.getElementById('perfil-nombre').innerText = usuarioActual.nombre_usuario;
+    document.getElementById('perfil-rol').innerText = usuarioActual.rol;
+    document.getElementById('perfil-dni').innerText = usuarioActual.dni || 'N/A';
+    
+    // Generar QR Personal
+    const qrContainer = document.getElementById('perfil-qr-container');
+    qrContainer.innerHTML = ''; 
+    const qrCodeValue = `QR_EMP_${usuarioActual.dni || usuarioActual.id_usuario}`;
+    document.getElementById('perfil-qr-texto').innerText = qrCodeValue;
+    
+    new QRCode(qrContainer, {
+        text: qrCodeValue,
+        width: 130,
+        height: 130,
+        colorDark : "#1e293b",
+        colorLight : "#ffffff",
+        correctLevel : QRCode.CorrectLevel.H
+    });
+
+    document.getElementById('modal-mi-perfil').classList.remove('hidden');
+}
+
+function cerrarModalMiPerfil() {
+    document.getElementById('modal-mi-perfil').classList.add('hidden');
+}
+
+// --- GESTIÓN DE USUARIOS ---
+async function cargarUsuarios() {
+    try {
+        const response = await fetch(`${API_URL}/api/usuarios`);
+        if (!response.ok) throw new Error("Fallo al obtener usuarios");
+        const usuarios = await response.json();
+        
+        const tbody = document.getElementById('tabla-usuarios');
+        tbody.innerHTML = '';
+        
+        usuarios.forEach(u => {
+            const badgeCls = u.estado_cuenta === 1 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700';
+            const estadoTxt = u.estado_cuenta === 1 ? 'Activo' : 'Desactivado';
+            
+            const tr = document.createElement('tr');
+            tr.innerHTML = `
+                <td class="p-3 border-b text-slate-700 font-mono text-xs">${u.dni || 'N/A'}</td>
+                <td class="p-3 border-b font-bold text-slate-800">${u.nombres_completos}</td>
+                <td class="p-3 border-b text-slate-600">${u.username}</td>
+                <td class="p-3 border-b text-blue-600 font-semibold text-xs">${u.rol}</td>
+                <td class="p-3 border-b"><span class="px-2 py-1 rounded text-xs font-bold ${badgeCls}">${estadoTxt}</span></td>
+                <td class="p-3 border-b text-center space-x-2">
+                    <button onclick='editarUsuarioUi(${JSON.stringify(u).replace(/'/g, "\\'")})' class="text-blue-500 hover:text-blue-700 font-bold" title="Editar">✏️</button>
+                    <button onclick='eliminarUsuario(${u.id_usuario})' class="text-red-500 hover:text-red-700 font-bold" title="Eliminar">🗑️</button>
+                </td>
+            `;
+            tbody.appendChild(tr);
+        });
+    } catch (error) {
+        console.error("Error al cargar usuarios:", error);
+    }
+}
+
+function abrirModalGestionUsuarios() {
+    cargarUsuarios();
+    limpiarFormUsuario();
+    document.getElementById('modal-gestion-usuarios').classList.remove('hidden');
+}
+
+function cerrarModalGestionUsuarios() {
+    document.getElementById('modal-gestion-usuarios').classList.add('hidden');
+}
+
+function limpiarFormUsuario() {
+    document.getElementById('form-usuario').reset();
+    document.getElementById('usuario-id').value = '';
+    document.getElementById('form-usuario-titulo').innerText = 'Crear Usuario';
+    document.getElementById('container-estado').classList.add('hidden');
+}
+
+function editarUsuarioUi(u) {
+    document.getElementById('usuario-id').value = u.id_usuario;
+    document.getElementById('usuario-dni').value = u.dni;
+    document.getElementById('usuario-nombres').value = u.nombres_completos;
+    document.getElementById('usuario-username').value = u.username;
+    document.getElementById('usuario-pin').value = u.pin;
+    document.getElementById('usuario-rol').value = u.id_rol;
+    document.getElementById('usuario-estado').value = u.estado_cuenta;
+    
+    document.getElementById('form-usuario-titulo').innerText = 'Editar Usuario';
+    document.getElementById('container-estado').classList.remove('hidden');
+}
+
+async function guardarUsuario(event) {
+    event.preventDefault();
+    const id = document.getElementById('usuario-id').value;
+    const isEdit = id !== '';
+    
+    const payload = {
+        dni: document.getElementById('usuario-dni').value.trim(),
+        nombres_completos: document.getElementById('usuario-nombres').value.trim(),
+        username: document.getElementById('usuario-username').value.trim(),
+        pin: document.getElementById('usuario-pin').value.trim(),
+        id_rol: parseInt(document.getElementById('usuario-rol').value),
+        estado_cuenta: isEdit ? parseInt(document.getElementById('usuario-estado').value) : 1
+    };
+    
+    try {
+        const url = isEdit ? `${API_URL}/api/usuarios/${id}` : `${API_URL}/api/usuarios`;
+        const method = isEdit ? 'PUT' : 'POST';
+        
+        const response = await fetch(url, {
+            method: method,
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        
+        if (!response.ok) {
+            const data = await response.json();
+            throw new Error(data.detail);
+        }
+        
+        limpiarFormUsuario();
+        cargarUsuarios();
+    } catch (error) {
+        alert("Error al guardar: " + error.message);
+    }
+}
+
+async function eliminarUsuario(id_usuario) {
+    if (!confirm("¿Estás seguro de eliminar este usuario? (Para historial, se recomienda Desactivarlo en edición)")) return;
+    try {
+        const response = await fetch(`${API_URL}/api/usuarios/${id_usuario}`, { method: 'DELETE' });
+        if (!response.ok) throw new Error("No se pudo eliminar");
+        cargarUsuarios();
+    } catch (error) {
+        alert("Error: " + error.message);
+    }
 }
 
 // Inicializar al cargar la página (mostrará el login)

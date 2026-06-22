@@ -7,6 +7,7 @@
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     
     <link rel="stylesheet" href="css/styles.css">
 </head>
@@ -34,29 +35,47 @@
         </div>
     </div>
 
-    <nav class="bg-blue-900 text-white p-4 shadow-lg flex flex-wrap justify-between items-center gap-4">
-        <div class="flex items-center gap-3">
-            <span class="text-2xl">⚙️</span>
-            <h1 class="text-xl font-bold tracking-wider">SAMA <span class="text-blue-300 text-sm font-light">| Intelligent System</span></h1>
+    <nav class="bg-blue-900 text-white p-4 shadow-lg flex flex-wrap justify-between items-center gap-4 relative">
+        <!-- Left: Hamburger Menu & Logo -->
+        <div class="flex items-center gap-4">
+            <button onclick="toggleMenu()" class="text-2xl hover:text-blue-300 transition focus:outline-none w-10 h-10 flex items-center justify-center rounded-lg hover:bg-blue-800">
+                &#9776;
+            </button>
+            <h1 class="text-xl font-bold tracking-wider hidden sm:block">SAMA <span class="text-blue-300 text-sm font-light">| Intelligent System</span></h1>
+            
+            <!-- Dropdown Menu -->
+            <div id="dropdown-menu" class="hidden absolute top-[100%] left-4 mt-2 w-56 bg-white rounded-xl shadow-2xl py-2 text-slate-800 z-50 border border-slate-100">
+                <div class="px-4 py-3 border-b border-slate-100 mb-1 bg-slate-50 rounded-t-xl mt(-2)">
+                    <p class="text-xs text-slate-500 mb-1 uppercase tracking-wider">Sesión Actual</p>
+                    <div id="nav-user-name" class="text-sm font-bold truncate">--</div>
+                    <div id="nav-user-role" class="text-xs text-blue-600 font-mono truncate font-bold">--</div>
+                </div>
+                <button onclick="abrirModalMiPerfil(); toggleMenu()" class="w-full text-left px-4 py-2.5 hover:bg-slate-100 transition text-sm flex items-center gap-3">
+                    <span class="text-lg">👤</span> Mi Perfil
+                </button>
+                <button onclick="abrirModalGestionUsuarios(); toggleMenu()" id="btn-gestionar-usuarios" class="hidden w-full text-left px-4 py-2.5 hover:bg-slate-100 transition text-sm flex items-center gap-3">
+                    <span class="text-lg">👥</span> Gestión de Usuarios
+                </button>
+                <div class="border-t border-slate-100 mt-1 pt-1"></div>
+                <button onclick="cerrarSesion(); toggleMenu()" class="w-full text-left px-4 py-2.5 hover:bg-red-50 text-red-600 transition text-sm flex items-center gap-3 font-bold">
+                    <span class="text-lg">🚪</span> Salir
+                </button>
+            </div>
         </div>
         
-        <div class="flex items-center gap-2">
-            <input type="text" id="input-qr-manual" placeholder="Ej. QR_EAM_MAQ_001" class="text-slate-800 px-3 py-1.5 rounded-lg text-sm w-40 outline-none focus:ring-2 focus:ring-blue-400">
-            <button onclick="buscarActivoManual()" class="bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded-lg text-sm font-semibold transition">🔍 Buscar</button>
-            <button onclick="abrirEscaner()" class="bg-green-500 hover:bg-green-400 text-white px-4 py-1.5 rounded-lg text-sm font-bold transition shadow ml-2 flex items-center gap-2">📷 Escanear QR</button>
-            <button onclick="abrirModalNuevoActivo()" id="btn-registrar-activo" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded-lg text-sm font-bold transition shadow ml-2 flex items-center gap-2">➕ Registrar Activo</button>
-        </div>
-
-        <div class="flex items-center gap-4">
-            <span id="server-status" class="flex items-center gap-2 text-sm font-semibold text-yellow-400">
-                <span class="w-3 h-3 rounded-full bg-yellow-400"></span> Conectando...
+        <!-- Right: Actions -->
+        <div class="flex items-center gap-2 flex-wrap justify-end flex-1">
+            <span id="server-status" class="flex items-center gap-2 text-xs font-semibold text-yellow-400 mr-2 hidden md:flex">
+                <span class="w-2 h-2 rounded-full bg-yellow-400"></span> Conectando...
             </span>
-            <div class="border-l border-blue-700 h-8 mx-2 hidden md:block"></div>
-            <div class="text-right hidden md:block">
-                <div id="nav-user-name" class="text-sm font-bold">--</div>
-                <div id="nav-user-role" class="text-xs text-blue-300 font-mono">--</div>
-            </div>
-            <button onclick="cerrarSesion()" class="bg-slate-800 hover:bg-slate-700 text-white px-3 py-1 rounded-lg text-xs font-bold transition">Salir</button>
+            <input type="text" id="input-qr-manual" placeholder="Ej. QR_EAM_MAQ_001" class="text-slate-800 px-3 py-1.5 rounded-lg text-sm w-32 sm:w-48 outline-none focus:ring-2 focus:ring-blue-400">
+            <button onclick="buscarActivoManual()" class="bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded-lg text-sm font-semibold transition" title="Buscar Activo">🔍</button>
+            <button onclick="abrirEscaner()" class="bg-green-500 hover:bg-green-400 text-white px-3 lg:px-4 py-1.5 rounded-lg text-sm font-bold transition shadow flex items-center gap-2">
+                📷 <span class="hidden lg:inline">Escanear QR</span>
+            </button>
+            <button onclick="abrirModalNuevoActivo()" id="btn-registrar-activo" class="bg-blue-600 hover:bg-blue-500 text-white px-3 lg:px-4 py-1.5 rounded-lg text-sm font-bold transition shadow flex items-center gap-2">
+                ➕ <span class="hidden lg:inline">Registrar Activo</span>
+            </button>
         </div>
     </nav>
 
@@ -93,11 +112,12 @@
                             <th class="p-4 font-semibold">Máquina / Equipo</th>
                             <th class="p-4 font-semibold">Valor</th>
                             <th class="p-4 font-semibold">Estado de Operación</th>
+                            <th class="p-4 font-semibold">Disponibilidad</th>
                             <th class="p-4 font-semibold text-center">Acción</th>
                         </tr>
                     </thead>
                     <tbody id="tabla-activos" class="text-sm divide-y divide-slate-200">
-                        <tr><td colspan="5" class="p-8 text-center text-slate-500">Conectando a SAMA Backend...</td></tr>
+                        <tr><td colspan="6" class="p-8 text-center text-slate-500">Conectando a SAMA Backend...</td></tr>
                     </tbody>
                 </table>
             </div>
@@ -105,10 +125,11 @@
     </main>
 
     <div id="modal-scanner" class="fixed inset-0 bg-slate-900/90 backdrop-blur-sm hidden flex flex-col items-center justify-center p-4 z-50">
-        <div class="bg-white p-4 rounded-2xl shadow-2xl max-w-md w-full text-center">
-            <h3 class="font-bold text-lg text-slate-800 mb-2">Enfoque el Código QR</h3>
-            <div id="reader" class="w-full rounded-lg overflow-hidden border-2 border-dashed border-blue-400"></div>
-            <button onclick="cerrarEscaner()" class="mt-4 bg-red-100 text-red-600 font-bold px-6 py-2 rounded-lg hover:bg-red-200 transition">Cancelar Escaneo</button>
+        <div class="bg-white p-6 rounded-2xl shadow-2xl max-w-md w-full text-center">
+            <h3 class="font-bold text-xl text-slate-800 mb-2">Retiro y Devolución</h3>
+            <p id="scanner-instruccion" class="text-blue-600 font-bold mb-4 bg-blue-50 p-2 rounded-lg border border-blue-200">Paso 1: Escanee el QR de la Máquina/Activo</p>
+            <div id="reader" class="w-full rounded-lg overflow-hidden border-2 border-dashed border-blue-400 mb-4 bg-slate-50 min-h-[250px]"></div>
+            <button onclick="cerrarEscaner()" class="mt-2 bg-slate-100 text-slate-600 font-bold px-6 py-2 rounded-lg hover:bg-slate-200 transition w-full">Cancelar Proceso</button>
         </div>
     </div>
 
@@ -320,7 +341,113 @@
             </div>
         </div>
     </div>
+    
+    <!-- MODAL MI PERFIL -->
+    <div id="modal-mi-perfil" class="fixed inset-0 bg-slate-900 bg-opacity-50 z-50 hidden flex justify-center items-center">
+        <div class="bg-white rounded-2xl shadow-xl w-full max-w-sm overflow-hidden">
+            <div class="bg-blue-900 text-white px-6 py-4 flex justify-between items-center">
+                <h3 class="font-bold text-lg">Mi Perfil</h3>
+                <button onclick="cerrarModalMiPerfil()" class="text-blue-200 hover:text-white text-2xl font-bold leading-none">&times;</button>
+            </div>
+            <div class="p-6 text-center">
+                <div class="w-24 h-24 bg-slate-200 rounded-full mx-auto mb-4 flex items-center justify-center text-4xl shadow-inner">
+                    👤
+                </div>
+                <h2 id="perfil-nombre" class="text-xl font-bold text-slate-800">--</h2>
+                <p id="perfil-rol" class="text-blue-600 font-semibold text-sm uppercase mb-2">--</p>
+                <p class="text-slate-500 text-sm mb-4">DNI: <span id="perfil-dni" class="font-mono font-bold text-slate-700">--</span></p>
+                
+                <div class="border-t border-slate-200 pt-4 mt-4">
+                    <p class="text-xs font-bold text-slate-400 mb-2 uppercase tracking-wider">Tu Código QR de Acceso</p>
+                    <div id="perfil-qr-container" class="flex justify-center mb-2 bg-white p-2 rounded-lg border border-slate-200 shadow-sm mx-auto" style="width: 150px; height: 150px;">
+                        <!-- QR Code goes here -->
+                    </div>
+                    <p id="perfil-qr-texto" class="font-mono text-xs text-slate-500">--</p>
+                </div>
+            </div>
+        </div>
+    </div>
 
-    <script src="js/app.js?v=5.0"></script>
+    <!-- MODAL GESTIÓN DE USUARIOS -->
+    <div id="modal-gestion-usuarios" class="fixed inset-0 bg-slate-900 bg-opacity-70 z-50 hidden flex justify-center items-start pt-10 overflow-y-auto">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-5xl mb-10 overflow-hidden flex flex-col md:flex-row relative">
+            <!-- Botón Cerrar Global Esquina -->
+            <button onclick="cerrarModalGestionUsuarios()" class="absolute top-4 right-4 text-slate-400 hover:text-red-500 text-3xl font-bold z-10 transition">&times;</button>
+
+            <!-- Formulario Lateral -->
+            <div class="w-full md:w-1/3 bg-slate-50 border-r border-slate-200 p-6 relative">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="font-bold text-lg text-slate-800" id="form-usuario-titulo">Crear Usuario</h3>
+                </div>
+                <form id="form-usuario" onsubmit="guardarUsuario(event)" class="space-y-4">
+                    <input type="hidden" id="usuario-id">
+                    
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 mb-1">DNI</label>
+                        <input type="text" id="usuario-dni" required class="w-full bg-white border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 mb-1">Nombres Completos</label>
+                        <input type="text" id="usuario-nombres" required class="w-full bg-white border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 mb-1">Nombre de Usuario (Login)</label>
+                        <input type="text" id="usuario-username" required class="w-full bg-white border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none font-mono">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 mb-1">PIN de Acceso (4 dígitos)</label>
+                        <input type="text" id="usuario-pin" required maxlength="4" class="w-full bg-white border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none font-mono tracking-widest">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-bold text-slate-500 mb-1">Rol</label>
+                        <select id="usuario-rol" required class="w-full bg-white border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                            <option value="1">Administrador</option>
+                            <option value="2">Supervisor</option>
+                            <option value="3">Operario</option>
+                        </select>
+                    </div>
+                    <div id="container-estado" class="hidden">
+                        <label class="block text-xs font-bold text-slate-500 mb-1">Estado de la Cuenta</label>
+                        <select id="usuario-estado" class="w-full bg-white border border-slate-300 rounded-lg p-2 text-sm focus:ring-2 focus:ring-blue-500 outline-none">
+                            <option value="1">Activo</option>
+                            <option value="0">Desactivado</option>
+                        </select>
+                    </div>
+                    
+                    <div class="flex gap-2 mt-6">
+                        <button type="submit" class="flex-1 bg-blue-600 hover:bg-blue-700 text-white py-2 rounded-lg font-bold shadow-sm transition text-sm">💾 Guardar</button>
+                        <button type="button" onclick="limpiarFormUsuario()" class="flex-1 bg-slate-200 hover:bg-slate-300 text-slate-700 py-2 rounded-lg font-bold transition text-sm">Limpiar</button>
+                    </div>
+                </form>
+            </div>
+            
+            <!-- Tabla Principal -->
+            <div class="w-full md:w-2/3 p-6 flex flex-col">
+                <div class="flex justify-between items-center mb-4 pr-6">
+                    <h2 class="text-xl font-bold text-slate-800">Directorio de Usuarios</h2>
+                </div>
+                
+                <div class="overflow-y-auto flex-1 border border-slate-200 rounded-lg mb-4">
+                    <table class="w-full text-left border-collapse text-sm">
+                        <thead class="bg-slate-100 text-slate-600 sticky top-0">
+                            <tr>
+                                <th class="p-3 border-b font-bold">DNI</th>
+                                <th class="p-3 border-b font-bold">Nombres</th>
+                                <th class="p-3 border-b font-bold">Usuario</th>
+                                <th class="p-3 border-b font-bold">Rol</th>
+                                <th class="p-3 border-b font-bold">Estado</th>
+                                <th class="p-3 border-b font-bold text-center">Acciones</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabla-usuarios" class="divide-y divide-slate-100">
+                            <!-- Datos insertados desde JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/app.js?v=6.0"></script>
 </body>
 </html>
