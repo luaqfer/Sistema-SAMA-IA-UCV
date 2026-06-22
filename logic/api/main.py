@@ -2,6 +2,7 @@ import sqlite3
 from datetime import datetime
 from fastapi import FastAPI, HTTPException, Form, File, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uvicorn
 import shutil
@@ -20,6 +21,10 @@ app = FastAPI(
     description="API Gateway N-Capas con Motor de Inferencia Difusa Mamdani integrado",
     version="1.0.0"
 )
+
+# Servir archivos estáticos (fotos y manuales)
+base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+app.mount("/data", StaticFiles(directory=os.path.join(base_dir, 'data')), name="data")
 
 # ---------------------------------------------------------
 # CONFIGURACIÓN CORS (VITAL PARA CONECTAR FLUTTER Y WEB)
@@ -50,6 +55,27 @@ class InspeccionRequest(BaseModel):
     id_usuario: int
     anomalia_operativa: float   # Escala numérica de 0 a 10 desde la Web
     integridad_estructural: float # Escala numérica de 0 a 10 desde la Web
+    temperatura_trabajo: float
+    fuga_fluidos: float
+
+class LoginRequest(BaseModel):
+    usuario: str
+    pin: str
+
+class UsuarioCreate(BaseModel):
+    username: str
+    pin: str
+    nombres_completos: str
+    dni: str
+    id_rol: int
+
+class UsuarioUpdate(BaseModel):
+    username: str
+    pin: str
+    nombres_completos: str
+    dni: str
+    id_rol: int
+    estado_cuenta: int
 
 def get_db_connection():
     # Resolvemos la ruta a data dinámicamente según la nueva arquitectura
@@ -95,8 +121,36 @@ def check_and_migrate_db():
             resultado_indice_salud REAL NOT NULL,
             alerta_bloqueo_disparada INTEGER NOT NULL
         )""")
+        
+        # Adaptar ROLES y USUARIOS existentes a la nueva lógica
+        cursor.execute("INSERT OR IGNORE INTO ROLES (id_rol, nombre_rol, permiso_procesar_ia) VALUES (1, 'ADMINISTRADOR', 1)")
+        cursor.execute("INSERT OR IGNORE INTO ROLES (id_rol, nombre_rol, permiso_procesar_ia) VALUES (2, 'SUPERVISOR', 1)")
+        cursor.execute("INSERT OR IGNORE INTO ROLES (id_rol, nombre_rol, permiso_procesar_ia) VALUES (3, 'OPERARIO', 1)")
+
+        try:
+            cursor.execute("ALTER TABLE USUARIOS ADD COLUMN username TEXT")
+        except sqlite3.OperationalError:
+            pass
+
+        try:
+            cursor.execute("ALTER TABLE USUARIOS ADD COLUMN pin TEXT")
+        except sqlite3.OperationalError:
+            pass
+        try:
+            cursor.execute("ALTER TABLE USUARIOS ADD COLUMN dni TEXT")
+        except sqlite3.OperationalError:
+            pass
+            
         conn.commit()
-    except sqlite3.OperationalError:
+            
+        # Actualizar usuarios o crearlos
+        cursor.execute("INSERT OR IGNORE INTO USUARIOS (id_usuario, id_rol, nombres_completos, credencial_hash, username, pin, estado_cuenta, dni) VALUES (101, 1, 'Administrador del Sistema', 'N/A', 'admin', '1234', 1, '00000001')")
+        cursor.execute("INSERT OR IGNORE INTO USUARIOS (id_usuario, id_rol, nombres_completos, credencial_hash, username, pin, estado_cuenta, dni) VALUES (102, 2, 'Supervisor de Planta', 'N/A', 'super', '1234', 1, '00000002')")
+        cursor.execute("INSERT OR IGNORE INTO USUARIOS (id_usuario, id_rol, nombres_completos, credencial_hash, username, pin, estado_cuenta, dni) VALUES (103, 3, 'Operario Técnico', 'N/A', 'ope', '1234', 1, '00000003')")
+        
+        conn.commit()
+    except sqlite3.OperationalError as e:
+        print("Error en base de datos:", e)
         pass
     finally:
         conn.close()
@@ -107,6 +161,95 @@ check_and_migrate_db()
 # ---------------------------------------------------------
 # ENDPOINTS PRINCIPALES (CAPA DE SERVICIOS / API GATEWAY)
 # ---------------------------------------------------------
+
+@app.post("/api/login")
+def login(request: LoginRequest):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """SELECT U.id_usuario, U.nombres_completos as nombre_usuario, U.dni, R.nombre_rol as rol 
+               FROM USUARIOS U 
+               JOIN ROLES R ON U.id_rol = R.id_rol 
+               WHERE U.username = ? AND U.pin = ? AND U.estado_cuenta = 1""",
+            (request.usuario, request.pin)
+        )
+        user = cursor.fetchone()
+        conn.close()
+        
+        if not user:
+            raise HTTPException(status_code=401, detail="Usuario o PIN incorrecto")
+            
+        return {
+            "mensaje": "Login exitoso",
+            "usuario": dict(user)
+        }
+    except Exception as e:
+        if isinstance(e, HTTPException):
+            raise e
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/api/usuarios")
+def obtener_usuarios():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT U.id_usuario, U.username, U.nombres_completos, U.dni, U.pin, U.id_rol, U.estado_cuenta, R.nombre_rol as rol 
+            FROM USUARIOS U 
+            JOIN ROLES R ON U.id_rol = R.id_rol
+        """)
+        usuarios = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return usuarios
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/api/usuarios")
+def crear_usuario(user: UsuarioCreate):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO USUARIOS (id_rol, nombres_completos, credencial_hash, username, pin, estado_cuenta, dni) VALUES (?, ?, 'N/A', ?, ?, 1, ?)",
+            (user.id_rol, user.nombres_completos, user.username, user.pin, user.dni)
+        )
+        conn.commit()
+        conn.close()
+        return {"mensaje": "Usuario creado exitosamente"}
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=400, detail="El nombre de usuario o DNI ya existe.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/api/usuarios/{id_usuario}")
+def editar_usuario(id_usuario: int, user: UsuarioUpdate):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE USUARIOS SET id_rol=?, nombres_completos=?, username=?, pin=?, dni=?, estado_cuenta=? WHERE id_usuario=?",
+            (user.id_rol, user.nombres_completos, user.username, user.pin, user.dni, user.estado_cuenta, id_usuario)
+        )
+        conn.commit()
+        conn.close()
+        return {"mensaje": "Usuario actualizado exitosamente"}
+    except sqlite3.IntegrityError:
+        raise HTTPException(status_code=400, detail="El nombre de usuario o DNI ya existe.")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/usuarios/{id_usuario}")
+def eliminar_usuario(id_usuario: int):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM USUARIOS WHERE id_usuario=?", (id_usuario,))
+        conn.commit()
+        conn.close()
+        return {"mensaje": "Usuario eliminado exitosamente"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/activos")
 def registrar_nuevo_activo(
@@ -201,7 +344,7 @@ def obtener_inventario():
         conn = get_db_connection()
         cursor = conn.cursor()
         cursor.execute("""
-            SELECT A.id_activo, A.codigo_qr, A.nombre_activo, A.valor_adquisicion, A.estado_operativo, C.nombre_categoria 
+            SELECT A.*, C.nombre_categoria 
             FROM ACTIVOS A
             JOIN CATEGORIAS_ACTIVOS C ON A.id_categoria = C.id_categoria
             ORDER BY A.id_activo ASC
@@ -247,7 +390,7 @@ def procesar_inspeccion_ia(req: InspeccionRequest):
         cursor = conn.cursor()
 
         # 1. Validación de existencia del activo
-        cursor.execute("SELECT nombre_activo, estado_operativo FROM ACTIVOS WHERE id_activo = ?", (req.id_activo,))
+        cursor.execute("SELECT nombre_activo, estado_operativo, fecha_compra FROM ACTIVOS WHERE id_activo = ?", (req.id_activo,))
         activo = cursor.fetchone()
         if not activo:
             conn.close()
@@ -268,16 +411,28 @@ def procesar_inspeccion_ia(req: InspeccionRequest):
             val_uso_ia = 8.5     # Equivale a Uso Alto
             uso_etiqueta = "Alto"
 
+        # 2.1 Variables calculadas de BD (Edad y Fallas Previas)
+        fecha_compra = activo["fecha_compra"]
+        anio_compra = int(fecha_compra.split('-')[0]) if fecha_compra else 2026
+        val_edad = 2026 - anio_compra
+
+        cursor.execute("SELECT COUNT(*) FROM HISTORIAL_INSPECCIONES_IA WHERE id_activo = ? AND alerta_bloqueo_disparada = 1 AND fecha_hora_proceso >= datetime('now', '-30 days')", (req.id_activo,))
+        val_fallas_previas = cursor.fetchone()[0]
+
         # 3. Invocar la Capa de Lógica de Negocio (Motor Matemático Scikit-Fuzzy)
         resultado_ia = motor_ia.procesar_diagnostico_predictivo(
             val_uso=val_uso_ia,
             val_anomalia=req.anomalia_operativa,
-            val_integridad=req.integridad_estructural
+            val_integridad=req.integridad_estructural,
+            val_temperatura=req.temperatura_trabajo,
+            val_fugas=req.fuga_fluidos,
+            val_fallas_previas=val_fallas_previas,
+            val_edad=val_edad
         )
 
         indice_salud = resultado_ia["indice_salud_pct"]
         alerta_bloqueo = 1 if resultado_ia["alerta_bloqueo"] else 0
-        nuevo_estado = resultado_ia["estado_recomended"] # 'INOPERATIVO_BLOQUEADO' o 'OPERATIVO'
+        nuevo_estado = resultado_ia["estado_recomendado"] # 'INOPERATIVO_BLOQUEADO' o 'OPERATIVO'
 
         # 4. Orquestación Transaccional Autónoma de la Base de Datos
         # Si la IA determina peligro, cambia el estado del activo en caliente para bloquearlo

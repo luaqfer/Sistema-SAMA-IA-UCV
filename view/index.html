@@ -10,7 +10,29 @@
     
     <link rel="stylesheet" href="css/styles.css">
 </head>
-<body class="bg-slate-100 font-sans text-slate-800">
+<body class="bg-slate-100 font-sans text-slate-800 overflow-hidden" id="body-main">
+
+    <!-- PANTALLA DE LOGIN -->
+    <div id="pantalla-login" class="fixed inset-0 bg-blue-900 z-[100] flex items-center justify-center">
+        <div class="bg-white p-8 rounded-2xl shadow-2xl max-w-sm w-full text-center">
+            <div class="text-5xl mb-4">⚙️</div>
+            <h2 class="text-2xl font-black text-slate-800 mb-2">SAMA EAM</h2>
+            <p class="text-slate-500 text-sm mb-6">Ingresa tus credenciales para acceder</p>
+            
+            <form id="form-login" onsubmit="ejecutarLogin(event)" class="space-y-4">
+                <div>
+                    <input type="text" id="login-user" required placeholder="Usuario (ej. admin)" class="w-full bg-slate-50 border border-slate-300 rounded-lg p-3 text-center focus:ring-2 focus:ring-blue-500 outline-none">
+                </div>
+                <div>
+                    <input type="password" id="login-pin" required placeholder="PIN de 4 dígitos" class="w-full bg-slate-50 border border-slate-300 rounded-lg p-3 text-center focus:ring-2 focus:ring-blue-500 outline-none tracking-[0.5em] font-mono text-lg" maxlength="4">
+                </div>
+                <button type="submit" id="btn-login" class="w-full bg-blue-600 hover:bg-blue-500 text-white font-bold py-3 rounded-xl transition shadow">
+                    Iniciar Sesión
+                </button>
+            </form>
+            <div class="mt-4 text-xs text-slate-400">Usuarios por defecto: admin, super, ope<br>PIN universal: 1234</div>
+        </div>
+    </div>
 
     <nav class="bg-blue-900 text-white p-4 shadow-lg flex flex-wrap justify-between items-center gap-4">
         <div class="flex items-center gap-3">
@@ -22,13 +44,19 @@
             <input type="text" id="input-qr-manual" placeholder="Ej. QR_EAM_MAQ_001" class="text-slate-800 px-3 py-1.5 rounded-lg text-sm w-40 outline-none focus:ring-2 focus:ring-blue-400">
             <button onclick="buscarActivoManual()" class="bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded-lg text-sm font-semibold transition">🔍 Buscar</button>
             <button onclick="abrirEscaner()" class="bg-green-500 hover:bg-green-400 text-white px-4 py-1.5 rounded-lg text-sm font-bold transition shadow ml-2 flex items-center gap-2">📷 Escanear QR</button>
-            <button onclick="abrirModalNuevoActivo()" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded-lg text-sm font-bold transition shadow ml-2 flex items-center gap-2">➕ Registrar Activo</button>
+            <button onclick="abrirModalNuevoActivo()" id="btn-registrar-activo" class="bg-blue-600 hover:bg-blue-500 text-white px-4 py-1.5 rounded-lg text-sm font-bold transition shadow ml-2 flex items-center gap-2">➕ Registrar Activo</button>
         </div>
 
         <div class="flex items-center gap-4">
             <span id="server-status" class="flex items-center gap-2 text-sm font-semibold text-yellow-400">
                 <span class="w-3 h-3 rounded-full bg-yellow-400"></span> Conectando...
             </span>
+            <div class="border-l border-blue-700 h-8 mx-2 hidden md:block"></div>
+            <div class="text-right hidden md:block">
+                <div id="nav-user-name" class="text-sm font-bold">--</div>
+                <div id="nav-user-role" class="text-xs text-blue-300 font-mono">--</div>
+            </div>
+            <button onclick="cerrarSesion()" class="bg-slate-800 hover:bg-slate-700 text-white px-3 py-1 rounded-lg text-xs font-bold transition">Salir</button>
         </div>
     </nav>
 
@@ -55,7 +83,7 @@
         <div class="bg-white rounded-xl shadow overflow-hidden">
             <div class="p-5 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
                 <h2 class="text-lg font-bold text-slate-700">Inventario Patrimonial en Red Local</h2>
-                <button onclick="cargarActivos()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition">🔄 Refrescar BD</button>
+                <button onclick="cargarActivos()" id="btn-refrescar-bd" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition">🔄 Refrescar BD</button>
             </div>
             <div class="overflow-x-auto">
                 <table class="w-full text-left border-collapse">
@@ -114,6 +142,22 @@
                         <option value="9.0">Intacta (Estructura sólida y segura)</option>
                         <option value="5.5">Desgaste (Corrosión visible o fisuras leves)</option>
                         <option value="1.5">Peligro (Roturas graves, riesgo de colapso)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-slate-700 text-sm font-bold mb-2">3. Temperatura de Trabajo</label>
+                    <select id="select-temperatura" class="w-full bg-white border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none" required>
+                        <option value="2.0">Normal (Temperatura estable al tacto)</option>
+                        <option value="6.0">Tibia (Disipación forzada o uso continuo)</option>
+                        <option value="9.5">Crítica (Recalentamiento o olor a quemado)</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-slate-700 text-sm font-bold mb-2">4. Fuga de Fluidos / Presión</label>
+                    <select id="select-fugas" class="w-full bg-white border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none" required>
+                        <option value="1.5">Ninguna (Totalmente estanco y seco)</option>
+                        <option value="5.5">Leve (Goteo esporádico o transpiración)</option>
+                        <option value="9.5">Grave (Chorro constante o pérdida rápida de presión)</option>
                     </select>
                 </div>
                 <button type="submit" id="btn-submit-ia" class="w-full bg-blue-900 hover:bg-blue-800 text-white font-bold py-3 rounded-xl transition shadow">
@@ -203,6 +247,80 @@
         </div>
     </div>
 
-    <script src="js/app.js"></script>
+    <div id="modal-detalle" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50">
+        <div class="bg-white rounded-2xl shadow-2xl max-w-4xl w-full overflow-hidden border border-slate-200">
+            <div class="bg-blue-900 text-white p-5 flex justify-between items-center">
+                <div>
+                    <h3 class="font-bold text-lg">Detalles del Activo</h3>
+                    <p id="detalle-qr-label" class="text-blue-300 text-xs font-mono mt-1">QR: --</p>
+                </div>
+                <button onclick="cerrarDetalle()" class="text-blue-300 hover:text-white text-xl">✕</button>
+            </div>
+            
+            <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
+                <!-- Columna Izquierda: Imagen -->
+                <div class="flex flex-col items-center justify-center bg-slate-50 border border-slate-200 rounded-xl p-4">
+                    <img id="detalle-foto" src="" alt="Fotografía del activo" class="max-h-64 object-contain rounded shadow hidden">
+                    <div id="detalle-sin-foto" class="text-slate-400 text-sm italic">Sin fotografía disponible</div>
+                </div>
+                
+                <!-- Columna Derecha: Datos -->
+                <div class="space-y-4">
+                    <div>
+                        <h4 class="text-xs text-slate-500 uppercase font-bold">Máquina / Equipo</h4>
+                        <p id="detalle-nombre" class="text-lg font-bold text-slate-800">--</p>
+                    </div>
+                    <div class="grid grid-cols-2 gap-4 text-sm text-slate-700">
+                        <div>
+                            <span class="font-bold">Categoría:</span>
+                            <div id="detalle-categoria">--</div>
+                        </div>
+                        <div>
+                            <span class="font-bold">Estado:</span>
+                            <div id="detalle-estado" class="font-bold">--</div>
+                        </div>
+                        <div>
+                            <span class="font-bold">Valor:</span>
+                            <div id="detalle-valor">--</div>
+                        </div>
+                        <div>
+                            <span class="font-bold">Ubicación:</span>
+                            <div id="detalle-ubicacion">--</div>
+                        </div>
+                        <div>
+                            <span class="font-bold">Marca:</span>
+                            <div id="detalle-marca">--</div>
+                        </div>
+                        <div>
+                            <span class="font-bold">N° Serie:</span>
+                            <div id="detalle-serie">--</div>
+                        </div>
+                        <div class="col-span-2">
+                            <span class="font-bold">Fecha de Compra:</span>
+                            <div id="detalle-fecha">--</div>
+                        </div>
+                    </div>
+                    
+                    <div class="pt-4 border-t border-slate-200 flex flex-col sm:flex-row justify-between items-center gap-4">
+                        <div class="w-full sm:w-auto">
+                            <a id="detalle-manual" href="#" target="_blank" class="hidden inline-block bg-slate-800 hover:bg-slate-700 text-white text-sm font-bold py-2 px-4 rounded-lg transition shadow w-full text-center">
+                                📄 Ver Manual de Usuario
+                            </a>
+                            <span id="detalle-sin-manual" class="text-slate-400 text-sm italic block text-center sm:text-left">Sin manual adjunto</span>
+                        </div>
+                        
+                        <div class="flex items-center gap-3 bg-slate-50 p-2 rounded-lg border border-slate-200 w-full sm:w-auto justify-center">
+                            <img id="detalle-qr-img" src="" alt="Código QR" class="w-16 h-16 border border-slate-300 p-1 bg-white rounded">
+                            <button onclick="imprimirQR()" class="bg-blue-600 hover:bg-blue-500 text-white text-sm font-bold py-2 px-3 rounded-lg transition shadow">
+                                🖨️ Imprimir QR
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script src="js/app.js?v=5.0"></script>
 </body>
 </html>

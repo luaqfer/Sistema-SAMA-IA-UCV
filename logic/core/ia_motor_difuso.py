@@ -8,50 +8,74 @@ class MotorDifusoMamdani:
         Inicializa el motor de Inferencia Difusa (Mamdani).
         Configura los universos de discurso (escalas numéricas) y las funciones de pertenencia.
         """
-        # 1. DEFINICIÓN DE ANTECEDENTES (Entradas) - Escalas de 0 a 10
+        # 1. DEFINICIÓN DE ANTECEDENTES (Entradas)
         self.uso = ctrl.Antecedent(np.arange(0, 11, 1), 'uso')
         self.anomalia = ctrl.Antecedent(np.arange(0, 11, 1), 'anomalia')
         self.integridad = ctrl.Antecedent(np.arange(0, 11, 1), 'integridad')
+        self.temperatura = ctrl.Antecedent(np.arange(0, 11, 1), 'temperatura')
+        self.fugas = ctrl.Antecedent(np.arange(0, 11, 1), 'fugas')
+        
+        # Historial y Contabilidad
+        self.fallas_previas = ctrl.Antecedent(np.arange(0, 11, 1), 'fallas_previas') # Bloqueos en 30 dias
+        self.edad_operativa = ctrl.Antecedent(np.arange(0, 51, 1), 'edad_operativa') # Años
 
-        # 2. DEFINICIÓN DEL CONSECUENTE (Salida) - Índice de Salud de 0 a 100%
+        # 2. DEFINICIÓN DEL CONSECUENTE (Salida)
         self.salud = ctrl.Consequent(np.arange(0, 101, 1), 'salud')
 
-        # 3. FUZZIFICACIÓN: Funciones de Pertenencia (Geometría Triangular)
-        # Mapeamos los conceptos lingüísticos a grados de verdad (0.0 a 1.0)
+        # 3. FUZZIFICACIÓN: Funciones de Pertenencia
         self.uso.automf(3, names=['bajo', 'medio', 'alto'])
         self.anomalia.automf(3, names=['ninguna', 'moderada', 'severa'])
+        self.integridad.automf(3, names=['peligro', 'desgaste', 'intacta']) # Ojo: Invertido
+        self.temperatura.automf(3, names=['normal', 'tibia', 'critica'])
+        self.fugas.automf(3, names=['ninguna', 'leve', 'grave'])
         
-        # Ojo: Para Integridad, 0 es peligro (malo) y 10 es intacta (bueno)
-        self.integridad.automf(3, names=['peligro', 'desgaste', 'intacta'])
+        self.fallas_previas.automf(3, names=['nulas', 'esporadicas', 'cronicas'])
+        
+        # Edad (Trimf manual)
+        self.edad_operativa['nueva'] = fuzz.trimf(self.edad_operativa.universe, [0, 0, 5])
+        self.edad_operativa['madura'] = fuzz.trimf(self.edad_operativa.universe, [3, 10, 20])
+        self.edad_operativa['obsoleta'] = fuzz.trimf(self.edad_operativa.universe, [15, 50, 50])
 
-        # Funciones de pertenencia personalizadas para el porcentaje de salud
-        self.salud['critica'] = fuzz.trimf(self.salud.universe, [0, 0, 40])       # Riesgo inminente <= 40%
-        self.salud['alerta'] = fuzz.trimf(self.salud.universe, [30, 50, 70])      # Requiere mantenimiento
-        self.salud['optima'] = fuzz.trimf(self.salud.universe, [60, 100, 100])    # Operativo seguro
+        self.salud['critica'] = fuzz.trimf(self.salud.universe, [0, 0, 40])
+        self.salud['alerta'] = fuzz.trimf(self.salud.universe, [30, 50, 70])
+        self.salud['optima'] = fuzz.trimf(self.salud.universe, [60, 100, 100])
 
         # 4. BASE DE CONOCIMIENTOS (Reglas Mamdani)
-        # Estas reglas operan con álgebra booleana difusa (Operador Mínimo para AND '&', Máximo para OR '|')
-        regla1 = ctrl.Rule(self.anomalia['severa'] | self.integridad['peligro'], self.salud['critica'])
-        regla2 = ctrl.Rule(self.uso['alto'] & self.anomalia['moderada'], self.salud['critica'])
-        regla3 = ctrl.Rule(self.uso['medio'] & self.integridad['desgaste'], self.salud['alerta'])
-        regla4 = ctrl.Rule(self.anomalia['ninguna'] & self.integridad['intacta'], self.salud['optima'])
-        regla5 = ctrl.Rule(self.uso['bajo'] & self.anomalia['ninguna'], self.salud['optima'])
-        regla6 = ctrl.Rule(self.anomalia['moderada'] & self.integridad['intacta'], self.salud['alerta'])
+        reglas = []
+        
+        # Reglas Óptimas (Camino feliz)
+        reglas.append(ctrl.Rule(self.anomalia['ninguna'] & self.integridad['intacta'] & self.fugas['ninguna'] & self.temperatura['normal'], self.salud['optima']))
+        
+        # Reglas Críticas Indiscutibles (Cualquier factor mortal)
+        reglas.append(ctrl.Rule(self.integridad['peligro'], self.salud['critica']))
+        reglas.append(ctrl.Rule(self.temperatura['critica'], self.salud['critica']))
+        reglas.append(ctrl.Rule(self.fugas['grave'], self.salud['critica']))
+        reglas.append(ctrl.Rule(self.fallas_previas['cronicas'], self.salud['critica']))
+        
+        # Combinación de factores moderados que llevan a Crítica
+        reglas.append(ctrl.Rule(self.edad_operativa['obsoleta'] & self.anomalia['severa'], self.salud['critica']))
+        reglas.append(ctrl.Rule(self.edad_operativa['obsoleta'] & self.fugas['leve'], self.salud['alerta']))
+        reglas.append(ctrl.Rule(self.fallas_previas['esporadicas'] & self.temperatura['tibia'], self.salud['alerta']))
+        
+        # Reglas de Alerta (Desgastes y advertencias)
+        reglas.append(ctrl.Rule(self.uso['alto'] & self.anomalia['moderada'], self.salud['alerta']))
+        reglas.append(ctrl.Rule(self.integridad['desgaste'], self.salud['alerta']))
+        reglas.append(ctrl.Rule(self.uso['bajo'] & self.anomalia['ninguna'] & self.edad_operativa['madura'], self.salud['optima']))
 
         # 5. CONSTRUCCIÓN DEL SISTEMA DE CONTROL
-        sistema_control = ctrl.ControlSystem([regla1, regla2, regla3, regla4, regla5, regla6])
+        sistema_control = ctrl.ControlSystem(reglas)
         self.simulador = ctrl.ControlSystemSimulation(sistema_control)
 
-    def procesar_diagnostico_predictivo(self, val_uso: float, val_anomalia: float, val_integridad: float) -> dict:
-        """
-        Método público que recibe los valores crudos, ejecuta la defuzzificación (Centroide) 
-        y retorna el porcentaje exacto y si amerita bloqueo preventivo.
-        """
+    def procesar_diagnostico_predictivo(self, val_uso: float, val_anomalia: float, val_integridad: float, val_temperatura: float, val_fugas: float, val_fallas_previas: float, val_edad: float) -> dict:
         try:
             # Inyectar valores al simulador
             self.simulador.input['uso'] = val_uso
             self.simulador.input['anomalia'] = val_anomalia
             self.simulador.input['integridad'] = val_integridad
+            self.simulador.input['temperatura'] = val_temperatura
+            self.simulador.input['fugas'] = val_fugas
+            self.simulador.input['fallas_previas'] = val_fallas_previas
+            self.simulador.input['edad_operativa'] = val_edad
 
             # Ejecutar el cálculo integral matemático
             self.simulador.compute()

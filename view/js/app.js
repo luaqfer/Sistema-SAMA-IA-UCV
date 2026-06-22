@@ -3,9 +3,11 @@
 const API_URL = "http://localhost:8000"; // Reemplaza por tu IP si pruebas en celular
 let inventarioGlobal = [];
 let html5QrcodeScanner = null;
+let usuarioActual = null;
 
-// 1. CARGA INICIAL
+// 1. CARGA INICIAL (Solo si hay sesión)
 async function cargarActivos() {
+    if (!usuarioActual) return;
     try {
         const response = await fetch(`${API_URL}/api/activos`);
         if (!response.ok) throw new Error("Fallo de red");
@@ -40,9 +42,12 @@ async function cargarActivos() {
                     <td class="p-4 font-bold text-slate-800">${activo.nombre_activo}</td>
                     <td class="p-4 text-slate-600 font-mono text-xs">S/ ${activo.valor_adquisicion.toFixed(2)}</td>
                     <td class="p-4"><span class="px-3 py-1 rounded-full text-xs ${badgeClass}">${activo.estado_operativo}</span></td>
-                    <td class="p-4 text-center">
-                        <button onclick="abrirModalInspeccion(${activo.id_activo}, '${activo.nombre_activo}', '${activo.codigo_qr}')" class="text-blue-600 hover:text-blue-800 font-bold text-xs underline">
-                            Inspeccionar
+                    <td class="p-4 text-center space-x-2">
+                        <button onclick="abrirModalDetalle(${activo.id_activo})" class="bg-slate-600 hover:bg-slate-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-sm inline-flex items-center gap-1">
+                            📄 Detalles
+                        </button>
+                        <button onclick="abrirModalInspeccion(${activo.id_activo}, '${activo.nombre_activo}', '${activo.codigo_qr}')" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-sm inline-flex items-center gap-1">
+                            🔍 Inspeccionar
                         </button>
                     </td>
                 </tr>
@@ -93,12 +98,13 @@ function procesarCodigoEscaneado(codigoQR) {
     }
 }
 
-// 3. COMUNICACIÓN CON EL MOTOR DE IA EN PYTHON
-function abrirModalInspeccion(id, nombre, qr) {
-    document.getElementById('modal-activo-id').value = id;
+// 3. IA Y DIAGNÓSTICO
+function abrirModalInspeccion(id_activo, nombre, qr) {
+    document.getElementById('modal-activo-id').value = id_activo;
     document.getElementById('modal-activo-nombre').value = nombre;
-    document.getElementById('modal-qr-label').innerText = `QR: ${qr}`;
-    document.getElementById('form-ia').classList.remove('hidden');
+    document.getElementById('modal-qr-label').innerText = "QR: " + qr;
+    
+    document.getElementById('form-ia').reset();
     document.getElementById('panel-resultado-ia').classList.add('hidden');
     document.getElementById('modal-inspeccion').classList.remove('hidden');
 }
@@ -121,9 +127,11 @@ async function ejecutarDiagnosticoIA(event) {
     try {
         const payload = {
             id_activo: parseInt(document.getElementById('modal-activo-id').value),
-            id_usuario: 1,
+            id_usuario: usuarioActual ? usuarioActual.id_usuario : 1,
             anomalia_operativa: parseFloat(document.getElementById('select-anomalia').value),
-            integridad_estructural: parseFloat(document.getElementById('select-integridad').value)
+            integridad_estructural: parseFloat(document.getElementById('select-integridad').value),
+            temperatura_trabajo: parseFloat(document.getElementById('select-temperatura').value),
+            fuga_fluidos: parseFloat(document.getElementById('select-fugas').value)
         };
 
         const response = await fetch(`${API_URL}/api/predict`, {
@@ -155,7 +163,8 @@ async function ejecutarDiagnosticoIA(event) {
             document.getElementById('resultado-titulo').innerText = "✅ ESTADO SEGURO";
         }
     } catch (error) {
-        alert("Error conectando con el motor Python.");
+        alert("Fallo crítico: " + error.message);
+        console.error(error);
     } finally {
         btnSubmit.innerText = "🧠 Procesar con Inteligencia Artificial";
         btnSubmit.disabled = false;
@@ -222,5 +231,153 @@ async function registrarNuevoActivo(event) {
     }
 }
 
-// Inicializar al cargar la página
-window.onload = cargarActivos;
+// 5. GESTIÓN DE USUARIOS Y SESIÓN
+async function ejecutarLogin(event) {
+    event.preventDefault();
+    const btn = document.getElementById('btn-login');
+    const prevText = btn.innerText;
+    btn.innerText = "Validando...";
+    btn.disabled = true;
+
+    try {
+        const response = await fetch(`${API_URL}/api/login`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                usuario: document.getElementById('login-user').value.trim(),
+                pin: document.getElementById('login-pin').value.trim()
+            })
+        });
+
+        const data = await response.json();
+        if (!response.ok) throw new Error(data.detail);
+
+        usuarioActual = data.usuario;
+        
+        // Actualizar UI
+        document.getElementById('pantalla-login').classList.add('hidden');
+        document.getElementById('body-main').classList.remove('overflow-hidden');
+        document.getElementById('nav-user-name').innerText = usuarioActual.nombre_usuario.toUpperCase();
+        document.getElementById('nav-user-role').innerText = usuarioActual.rol;
+
+        // Aplicar permisos de Rol
+        if (usuarioActual.rol === 'OPERARIO') {
+            document.getElementById('btn-registrar-activo').classList.add('hidden');
+            document.getElementById('btn-refrescar-bd').classList.add('hidden');
+        } else {
+            document.getElementById('btn-registrar-activo').classList.remove('hidden');
+            document.getElementById('btn-refrescar-bd').classList.remove('hidden');
+        }
+
+        cargarActivos(); // Cargar datos ahora que hay sesión
+    } catch (error) {
+        alert("Acceso denegado: " + error.message);
+    } finally {
+        btn.innerText = prevText;
+        btn.disabled = false;
+    }
+}
+
+function cerrarSesion() {
+    usuarioActual = null;
+    inventarioGlobal = [];
+    document.getElementById('tabla-activos').innerHTML = '';
+    document.getElementById('pantalla-login').classList.remove('hidden');
+    document.getElementById('body-main').classList.add('overflow-hidden');
+    document.getElementById('form-login').reset();
+}
+
+// Inicializar al cargar la página (mostrará el login)
+// window.onload = cargarActivos; (Ya no, ahora esperamos el login)
+
+// --- MODAL DE DETALLES ---
+function abrirModalDetalle(id_activo) {
+    const activo = inventarioGlobal.find(a => a.id_activo === id_activo);
+    if (!activo) return;
+
+    document.getElementById('detalle-qr-label').innerText = "QR: " + activo.codigo_qr;
+    document.getElementById('detalle-nombre').innerText = activo.nombre_activo;
+    document.getElementById('detalle-categoria').innerText = activo.nombre_categoria || "Sin categoría";
+    document.getElementById('detalle-estado').innerText = activo.estado_operativo;
+    
+    // Asignar color al estado
+    const estadoElem = document.getElementById('detalle-estado');
+    if (activo.estado_operativo === 'OPERATIVO') estadoElem.className = 'font-bold text-green-600';
+    else if (activo.estado_operativo.includes('OBSERVACION') || activo.estado_operativo.includes('MANTENIMIENTO')) estadoElem.className = 'font-bold text-yellow-600';
+    else estadoElem.className = 'font-bold text-red-600';
+
+    document.getElementById('detalle-valor').innerText = "S/ " + (activo.valor_adquisicion || 0).toFixed(2);
+    document.getElementById('detalle-ubicacion').innerText = activo.ubicacion || "No registrada";
+    document.getElementById('detalle-marca').innerText = activo.marca || "No registrada";
+    document.getElementById('detalle-serie').innerText = activo.num_serie || "No registrado";
+    document.getElementById('detalle-fecha').innerText = activo.fecha_compra || "No registrada";
+
+    // Generar QR dinámico
+    const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(activo.codigo_qr)}`;
+    document.getElementById('detalle-qr-img').src = qrUrl;
+    // Guardamos los datos para impresión
+    window.activoActualQR = activo;
+
+    // Manejar fotografía
+    const imgElem = document.getElementById('detalle-foto');
+    const sinImgElem = document.getElementById('detalle-sin-foto');
+    if (activo.foto_path) {
+        imgElem.src = API_URL + "/" + activo.foto_path;
+        imgElem.classList.remove('hidden');
+        sinImgElem.classList.add('hidden');
+    } else {
+        imgElem.classList.add('hidden');
+        sinImgElem.classList.remove('hidden');
+    }
+
+    // Manejar manual
+    const manualElem = document.getElementById('detalle-manual');
+    const sinManualElem = document.getElementById('detalle-sin-manual');
+    if (activo.manual_path) {
+        manualElem.href = API_URL + "/" + activo.manual_path;
+        manualElem.classList.remove('hidden');
+        sinManualElem.classList.add('hidden');
+    } else {
+        manualElem.classList.add('hidden');
+        sinManualElem.classList.remove('hidden');
+    }
+
+    document.getElementById('modal-detalle').classList.remove('hidden');
+}
+
+function cerrarDetalle() {
+    document.getElementById('modal-detalle').classList.add('hidden');
+}
+
+function imprimirQR() {
+    if (!window.activoActualQR) return;
+    
+    const qrUrl = document.getElementById('detalle-qr-img').src;
+    const nombre = window.activoActualQR.nombre_activo;
+    const codigo = window.activoActualQR.codigo_qr;
+    
+    const ventanaImpresion = window.open('', '_blank', 'width=400,height=500');
+    ventanaImpresion.document.write(`
+        <html>
+        <head>
+            <title>Imprimir QR - ${codigo}</title>
+            <style>
+                body { font-family: Arial, sans-serif; text-align: center; margin-top: 50px; }
+                .card { border: 2px dashed #000; display: inline-block; padding: 20px; border-radius: 10px; }
+                img { width: 150px; height: 150px; }
+                h2 { margin: 10px 0 5px 0; font-size: 18px; }
+                p { margin: 0; font-size: 14px; color: #555; }
+            </style>
+        </head>
+        <body>
+            <div class="card">
+                <img src="${qrUrl}" alt="QR" onload="window.print(); window.close();" />
+                <h2>${nombre}</h2>
+                <p>ID: ${codigo}</p>
+                <p style="font-size: 10px; margin-top: 10px;">Sistema EAM SAMA</p>
+            </div>
+        </body>
+        </html>
+    `);
+    ventanaImpresion.document.close();
+}
