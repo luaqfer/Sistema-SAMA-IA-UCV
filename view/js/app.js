@@ -156,6 +156,7 @@ function abrirModalInspeccion(id_activo, nombre, qr) {
     document.getElementById('modal-qr-label').innerText = "QR: " + qr;
     
     document.getElementById('form-ia').reset();
+    document.getElementById('form-ia').classList.remove('hidden');
     document.getElementById('panel-resultado-ia').classList.add('hidden');
     document.getElementById('modal-inspeccion').classList.remove('hidden');
 }
@@ -209,6 +210,9 @@ async function ejecutarDiagnosticoIA(event) {
         if (data.alerta_bloqueo_disparada) {
             semaforoHeader.className = "rounded-xl p-5 border bg-red-600 border-red-700 text-white pulse-red animate-bounce";
             document.getElementById('resultado-titulo').innerText = "⚠️ BLOQUEO ACTIVADO";
+        } else if (data.estado_recomendado === "EN OBSERVACION") {
+            semaforoHeader.className = "rounded-xl p-5 border bg-yellow-500 border-yellow-600 text-white";
+            document.getElementById('resultado-titulo').innerText = "⚠️ EN OBSERVACIÓN";
         } else {
             semaforoHeader.className = "rounded-xl p-5 border bg-green-500 border-green-600 text-white";
             document.getElementById('resultado-titulo').innerText = "✅ ESTADO SEGURO";
@@ -224,12 +228,39 @@ async function ejecutarDiagnosticoIA(event) {
 
 // 4. REGISTRO DE NUEVOS ACTIVOS
 function abrirModalNuevoActivo() {
+    document.getElementById('form-nuevo-activo-titulo').innerText = "➕ Registrar Nuevo Activo";
+    document.getElementById('nuevo-id-activo').value = "";
+    document.getElementById('form-nuevo-activo').reset();
+    document.getElementById('modal-nuevo-activo').classList.remove('hidden');
+}
+
+function abrirModalEditarActivo() {
+    if (!window.activoActualQR) return; // Se guarda en abrirModalDetalle
+    
+    // Cerrar detalle
+    cerrarDetalle();
+    
+    const activo = window.activoActualQR;
+    document.getElementById('form-nuevo-activo-titulo').innerText = "✏️ Editar Activo";
+    document.getElementById('nuevo-id-activo').value = activo.id_activo;
+    
+    // Pre-poblar
+    document.getElementById('nuevo-qr').value = activo.codigo_qr;
+    document.getElementById('nuevo-nombre').value = activo.nombre_activo;
+    document.getElementById('nuevo-categoria').value = activo.id_categoria || 1;
+    document.getElementById('nuevo-valor').value = activo.valor_adquisicion || 0;
+    document.getElementById('nuevo-ubicacion').value = activo.ubicacion || '';
+    document.getElementById('nuevo-marca').value = activo.marca || '';
+    document.getElementById('nuevo-serie').value = activo.num_serie || '';
+    document.getElementById('nuevo-fecha-compra').value = activo.fecha_compra || '';
+    
     document.getElementById('modal-nuevo-activo').classList.remove('hidden');
 }
 
 function cerrarModalNuevoActivo() {
     document.getElementById('modal-nuevo-activo').classList.add('hidden');
     document.getElementById('form-nuevo-activo').reset();
+    document.getElementById('nuevo-id-activo').value = "";
 }
 
 async function registrarNuevoActivo(event) {
@@ -259,8 +290,13 @@ async function registrarNuevoActivo(event) {
             formData.append('manual', manualInput.files[0]);
         }
 
-        const response = await fetch(`${API_URL}/api/activos`, {
-            method: 'POST',
+        const idActivo = document.getElementById('nuevo-id-activo').value;
+        const isEdit = idActivo !== "";
+        const method = isEdit ? 'PUT' : 'POST';
+        const url = isEdit ? `${API_URL}/api/activos/${idActivo}` : `${API_URL}/api/activos`;
+
+        const response = await fetch(url, {
+            method: method,
             body: formData
         });
 
@@ -275,9 +311,9 @@ async function registrarNuevoActivo(event) {
         cargarActivos(); // Refrescar la tabla automáticamente
 
     } catch (error) {
-        alert("⚠️ Fallo en el registro: " + error.message);
+        alert("⚠️ Fallo al procesar activo: " + error.message);
     } finally {
-        btnSubmit.innerText = "💾 Guardar Activo (Operativo)";
+        btnSubmit.innerText = "💾 Guardar Activo";
         btnSubmit.disabled = false;
     }
 }
@@ -498,9 +534,6 @@ async function eliminarUsuario(id_usuario) {
     }
 }
 
-// Inicializar al cargar la página (mostrará el login)
-// window.onload = cargarActivos; (Ya no, ahora esperamos el login)
-
 // --- MODAL DE DETALLES ---
 function abrirModalDetalle(id_activo) {
     const activo = inventarioGlobal.find(a => a.id_activo === id_activo);
@@ -508,7 +541,10 @@ function abrirModalDetalle(id_activo) {
 
     document.getElementById('detalle-qr-label').innerText = "QR: " + activo.codigo_qr;
     document.getElementById('detalle-nombre').innerText = activo.nombre_activo;
-    document.getElementById('detalle-categoria').innerText = activo.nombre_categoria || "Sin categoría";
+    
+    const categoriaTexto = activo.nombre_categoria || "Sin categoría";
+    document.getElementById('detalle-categoria').innerText = categoriaTexto;
+    document.getElementById('detalle-categoria-header').innerText = categoriaTexto;
     document.getElementById('detalle-estado').innerText = activo.estado_operativo;
     
     // Asignar color al estado
@@ -526,8 +562,16 @@ function abrirModalDetalle(id_activo) {
     // Generar QR dinámico
     const qrUrl = `https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent(activo.codigo_qr)}`;
     document.getElementById('detalle-qr-img').src = qrUrl;
-    // Guardamos los datos para impresión
+    // Guardamos los datos para impresión y edición
     window.activoActualQR = activo;
+
+    // Lógica de permisos para el botón Editar
+    const btnEditar = document.getElementById('btn-editar-activo');
+    if (usuarioActual && (usuarioActual.id_rol === 1 || usuarioActual.id_rol === 2)) {
+        btnEditar.classList.remove('hidden');
+    } else {
+        btnEditar.classList.add('hidden');
+    }
 
     // Manejar fotografía
     const imgElem = document.getElementById('detalle-foto');
@@ -591,4 +635,46 @@ function imprimirQR() {
         </html>
     `);
     ventanaImpresion.document.close();
+}
+
+// --- MODAL HISTORIAL DE MOVIMIENTOS ---
+async function abrirModalHistorial() {
+    if (!window.activoActualQR) return;
+    const id_activo = window.activoActualQR.id_activo;
+    
+    document.getElementById('modal-historial').classList.remove('hidden');
+    const tbody = document.getElementById('tabla-historial');
+    tbody.innerHTML = '<tr><td colspan="3" class="text-center p-4 text-slate-500">Cargando historial...</td></tr>';
+    
+    try {
+        const response = await fetch(`${API_URL}/api/movimientos/activo/${id_activo}`);
+        const historial = await response.json();
+        
+        if (!response.ok) throw new Error(historial.detail || "Error al cargar historial");
+        
+        if (historial.length === 0) {
+            tbody.innerHTML = '<tr><td colspan="3" class="text-center p-4 text-slate-500 italic">No hay movimientos registrados.</td></tr>';
+            return;
+        }
+        
+        tbody.innerHTML = '';
+        historial.forEach(mov => {
+            const esRetiro = mov.tipo_movimiento === "RETIRO";
+            const badgeClass = esRetiro ? "bg-orange-100 text-orange-800" : "bg-blue-100 text-blue-800";
+            
+            tbody.innerHTML += `
+                <tr class="border-b border-slate-100">
+                    <td class="p-3 whitespace-nowrap text-xs font-mono text-slate-600">${mov.fecha_movimiento}</td>
+                    <td class="p-3"><span class="px-2 py-1 rounded text-xs font-bold ${badgeClass}">${mov.tipo_movimiento}</span></td>
+                    <td class="p-3 font-semibold text-slate-700">${mov.nombres_completos || 'Desconocido'}</td>
+                </tr>
+            `;
+        });
+    } catch (error) {
+        tbody.innerHTML = `<tr><td colspan="3" class="text-center p-4 text-red-500">Error: ${error.message}</td></tr>`;
+    }
+}
+
+function cerrarModalHistorial() {
+    document.getElementById('modal-historial').classList.add('hidden');
 }

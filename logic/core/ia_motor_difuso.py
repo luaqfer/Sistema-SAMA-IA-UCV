@@ -83,14 +83,21 @@ class MotorDifusoMamdani:
             # Extraer el resultado escalar (Defuzzificación por Centroide)
             resultado_pct = round(self.simulador.output['salud'], 2)
 
-            # Regla de Negocio BR-05: Bloqueo Automático
+            # Reglas de Negocio para el Estado Recomendado
             bloqueo = True if resultado_pct <= 40.0 else False
+            
+            if resultado_pct <= 40.0:
+                estado_recomendado = "INOPERATIVO (BLOQUEADO)"
+            elif resultado_pct <= 70.0:
+                estado_recomendado = "EN OBSERVACION"
+            else:
+                estado_recomendado = "OPERATIVO"
 
             return {
                 "indice_salud_pct": resultado_pct,
                 "alerta_bloqueo": bloqueo,
-                "estado_recomendado": "INOPERATIVO (BLOQUEADO)" if bloqueo else "OPERATIVO",
-                "mensaje": "El motor difuso procesó las variables exitosamente."
+                "estado_recomendado": estado_recomendado,
+                "mensaje": f"Evaluado. El activo debe pasar a {estado_recomendado}."
             }
         
         except Exception as e:

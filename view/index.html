@@ -209,10 +209,11 @@
     <div id="modal-nuevo-activo" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50 overflow-y-auto">
         <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200 my-8">
             <div class="bg-blue-900 text-white p-5 flex justify-between items-center">
-                <h3 class="font-bold text-lg">➕ Registrar Nuevo Activo</h3>
+                <h3 id="form-nuevo-activo-titulo" class="font-bold text-lg">➕ Registrar Nuevo Activo</h3>
                 <button onclick="cerrarModalNuevoActivo()" class="text-blue-300 hover:text-white text-xl">✕</button>
             </div>
             <form id="form-nuevo-activo" onsubmit="registrarNuevoActivo(event)" class="p-6 space-y-4">
+                <input type="hidden" id="nuevo-id-activo" value="">
                 <div class="grid grid-cols-2 gap-4">
                     <div class="col-span-2">
                         <label class="block text-slate-700 text-sm font-bold mb-1">Nombre del Activo</label>
@@ -262,7 +263,7 @@
                     </div>
                 </div>
                 <button type="submit" id="btn-submit-nuevo" class="w-full bg-green-600 hover:bg-green-500 text-white font-bold py-3 rounded-xl transition shadow mt-4">
-                    💾 Guardar Activo (Operativo)
+                    💾 Guardar Activo
                 </button>
             </form>
         </div>
@@ -275,7 +276,11 @@
                     <h3 class="font-bold text-lg">Detalles del Activo</h3>
                     <p id="detalle-qr-label" class="text-blue-300 text-xs font-mono mt-1">QR: --</p>
                 </div>
-                <button onclick="cerrarDetalle()" class="text-blue-300 hover:text-white text-xl">✕</button>
+                <div class="flex items-center space-x-4">
+                    <button id="btn-historial-activo" onclick="abrirModalHistorial()" class="bg-indigo-600 hover:bg-indigo-500 px-3 py-1 rounded text-sm font-bold shadow transition text-white">⏱️ Historial de Movimientos</button>
+                    <button id="btn-editar-activo" onclick="abrirModalEditarActivo()" class="hidden bg-blue-700 hover:bg-blue-600 px-3 py-1 rounded text-sm font-bold shadow transition text-white">✏️ Editar</button>
+                    <button onclick="cerrarDetalle()" class="text-blue-300 hover:text-white text-xl">✕</button>
+                </div>
             </div>
             
             <div class="p-6 grid grid-cols-1 md:grid-cols-2 gap-6">
@@ -288,7 +293,7 @@
                 <!-- Columna Derecha: Datos -->
                 <div class="space-y-4">
                     <div>
-                        <h4 class="text-xs text-slate-500 uppercase font-bold">Máquina / Equipo</h4>
+                        <h4 id="detalle-categoria-header" class="text-xs text-slate-500 uppercase font-bold">Máquina / Equipo</h4>
                         <p id="detalle-nombre" class="text-lg font-bold text-slate-800">--</p>
                     </div>
                     <div class="grid grid-cols-2 gap-4 text-sm text-slate-700">
@@ -444,6 +449,30 @@
                         </tbody>
                     </table>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- MODAL HISTORIAL DE MOVIMIENTOS -->
+    <div id="modal-historial" class="fixed inset-0 bg-slate-900 bg-opacity-70 hidden flex items-center justify-center z-50 p-4">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-2xl overflow-hidden flex flex-col max-h-[90vh]">
+            <div class="bg-indigo-900 p-4 text-white flex justify-between items-center shrink-0">
+                <h3 class="font-bold text-lg">⏱️ Historial de Movimientos</h3>
+                <button onclick="cerrarModalHistorial()" class="text-indigo-300 hover:text-white text-xl">✕</button>
+            </div>
+            <div class="p-6 overflow-y-auto flex-1">
+                <table class="w-full text-left text-sm">
+                    <thead class="bg-slate-100 text-slate-600 sticky top-0">
+                        <tr>
+                            <th class="p-3 border-b font-bold">Fecha / Hora</th>
+                            <th class="p-3 border-b font-bold">Acción</th>
+                            <th class="p-3 border-b font-bold">Usuario Responsable</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tabla-historial" class="divide-y divide-slate-100">
+                        <!-- Llenado dinámico -->
+                    </tbody>
+                </table>
             </div>
         </div>
     </div>

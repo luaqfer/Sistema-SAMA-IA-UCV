@@ -119,7 +119,8 @@ def check_and_migrate_db():
             id_movimiento INTEGER PRIMARY KEY AUTOINCREMENT,
             id_activo INTEGER NOT NULL,
             fecha_movimiento TEXT NOT NULL,
-            tipo_movimiento TEXT NOT NULL
+            tipo_movimiento TEXT NOT NULL,
+            id_usuario INTEGER
         )""")
         cursor.execute("""
         CREATE TABLE IF NOT EXISTS HISTORIAL_INSPECCIONES_IA (
@@ -268,7 +269,12 @@ def obtener_activos():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        cursor.execute("SELECT *, COALESCE(estado_uso, 'DISPONIBLE') as estado_uso, id_usuario_responsable FROM ACTIVOS")
+        cursor.execute("""
+            SELECT A.*, C.nombre_categoria, COALESCE(A.estado_uso, 'DISPONIBLE') as estado_uso, A.id_usuario_responsable 
+            FROM ACTIVOS A
+            LEFT JOIN CATEGORIAS_ACTIVOS C ON A.id_categoria = C.id_categoria
+            ORDER BY A.id_activo ASC
+        """)
         activos = [dict(row) for row in cursor.fetchall()]
         
         # Enriquecer con el nombre del usuario responsable si lo hay
@@ -313,16 +319,16 @@ def procesar_movimiento_qr(req: MovimientoQRRequest):
             # RETIRO
             cursor.execute("UPDATE ACTIVOS SET estado_uso = 'EN USO', id_usuario_responsable = ? WHERE id_activo = ?", 
                            (usuario['id_usuario'], activo['id_activo']))
-            cursor.execute("INSERT INTO MOVIMIENTOS_ACTIVOS (id_activo, fecha_movimiento, tipo_movimiento) VALUES (?, ?, ?)",
-                           (activo['id_activo'], fecha_actual, 'RETIRO'))
+            cursor.execute("INSERT INTO MOVIMIENTOS_ACTIVOS (id_activo, fecha_movimiento, tipo_movimiento, id_usuario) VALUES (?, ?, ?, ?)",
+                           (activo['id_activo'], fecha_actual, 'RETIRO', usuario['id_usuario']))
             mensaje = f"Activo '{activo['nombre_activo']}' retirado exitosamente por {usuario['nombres_completos']}."
             accion = "RETIRO"
         else:
             # DEVOLUCION
             cursor.execute("UPDATE ACTIVOS SET estado_uso = 'DISPONIBLE', id_usuario_responsable = NULL WHERE id_activo = ?", 
                            (activo['id_activo'],))
-            cursor.execute("INSERT INTO MOVIMIENTOS_ACTIVOS (id_activo, fecha_movimiento, tipo_movimiento) VALUES (?, ?, ?)",
-                           (activo['id_activo'], fecha_actual, 'DEVOLUCION'))
+            cursor.execute("INSERT INTO MOVIMIENTOS_ACTIVOS (id_activo, fecha_movimiento, tipo_movimiento, id_usuario) VALUES (?, ?, ?, ?)",
+                           (activo['id_activo'], fecha_actual, 'DEVOLUCION', usuario['id_usuario']))
             mensaje = f"Activo '{activo['nombre_activo']}' devuelto exitosamente por {usuario['nombres_completos']}."
             accion = "DEVOLUCION"
 
@@ -411,6 +417,83 @@ def registrar_nuevo_activo(
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error al registrar activo: {str(e)}")
 
+@app.put("/api/activos/{id_activo}")
+def editar_activo(
+    id_activo: int,
+    codigo_qr: str = Form(...),
+    nombre_activo: str = Form(...),
+    id_categoria: int = Form(...),
+    valor_adquisicion: float = Form(...),
+    ubicacion: str = Form(...),
+    marca: str = Form(...),
+    num_serie: str = Form(...),
+    fecha_compra: str = Form(...),
+    foto: UploadFile = File(None),
+    manual: UploadFile = File(None)
+):
+    """Actualiza la información de un activo existente."""
+    try:
+        base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Validar si el QR ya existe en OTRO activo
+        cursor.execute("SELECT id_activo FROM ACTIVOS WHERE codigo_qr = ? AND id_activo != ?", (codigo_qr, id_activo))
+        if cursor.fetchone():
+            conn.close()
+            raise HTTPException(status_code=400, detail="El Código QR ya está registrado en otro activo.")
+
+        # Obtener datos actuales
+        cursor.execute("SELECT foto_path, manual_path FROM ACTIVOS WHERE id_activo = ?", (id_activo,))
+        activo_actual = cursor.fetchone()
+        if not activo_actual:
+            conn.close()
+            raise HTTPException(status_code=404, detail="Activo no encontrado.")
+
+        foto_guardada = activo_actual['foto_path']
+        manual_guardado = activo_actual['manual_path']
+
+        # Actualizar foto si se envió
+        if foto and foto.filename:
+            fotos_dir = os.path.join(base_dir, 'data', 'assets', 'fotos')
+            os.makedirs(fotos_dir, exist_ok=True)
+            ext = os.path.splitext(foto.filename)[1]
+            foto_filename = f"foto_{codigo_qr}{ext}"
+            foto_path_abs = os.path.join(fotos_dir, foto_filename)
+            with open(foto_path_abs, "wb") as buffer:
+                shutil.copyfileobj(foto.file, buffer)
+            foto_guardada = f"data/assets/fotos/{foto_filename}"
+
+        # Actualizar manual si se envió
+        if manual and manual.filename:
+            manuales_dir = os.path.join(base_dir, 'data', 'assets', 'manuales')
+            os.makedirs(manuales_dir, exist_ok=True)
+            ext = os.path.splitext(manual.filename)[1]
+            manual_filename = f"manual_{codigo_qr}{ext}"
+            manual_path_abs = os.path.join(manuales_dir, manual_filename)
+            with open(manual_path_abs, "wb") as buffer:
+                shutil.copyfileobj(manual.file, buffer)
+            manual_guardado = f"data/assets/manuales/{manual_filename}"
+
+        cursor.execute("""
+            UPDATE ACTIVOS SET 
+                codigo_qr = ?, nombre_activo = ?, id_categoria = ?, valor_adquisicion = ?, 
+                ubicacion = ?, marca = ?, num_serie = ?, fecha_compra = ?, foto_path = ?, manual_path = ?
+            WHERE id_activo = ?
+        """, (
+            codigo_qr, nombre_activo, id_categoria, valor_adquisicion,
+            ubicacion, marca, num_serie, fecha_compra, foto_guardada, manual_guardado,
+            id_activo
+        ))
+        
+        conn.commit()
+        conn.close()
+        return {"status": "success", "mensaje": "Activo actualizado correctamente"}
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error al actualizar activo: {str(e)}")
+
 @app.get("/")
 def health_check():
     """Ruta raíz para verificar que el servidor local está vivo."""
@@ -421,23 +504,6 @@ def health_check():
     }
 
 
-@app.get("/api/activos")
-def obtener_inventario():
-    """Retorna la lista completa de activos para el Dashboard de la Plataforma Web."""
-    try:
-        conn = get_db_connection()
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT A.*, C.nombre_categoria 
-            FROM ACTIVOS A
-            JOIN CATEGORIAS_ACTIVOS C ON A.id_categoria = C.id_categoria
-            ORDER BY A.id_activo ASC
-        """)
-        rows = cursor.fetchall()
-        conn.close()
-        return [dict(row) for row in rows]
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error en base de datos: {str(e)}")
 
 
 @app.get("/api/activos/escanear/{codigo_qr}")
@@ -462,6 +528,24 @@ def escanear_activo_qr(codigo_qr: str):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+@app.get("/api/movimientos/activo/{id_activo}")
+def obtener_historial_movimientos(id_activo: int):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT M.fecha_movimiento, M.tipo_movimiento, U.nombres_completos 
+            FROM MOVIMIENTOS_ACTIVOS M
+            LEFT JOIN USUARIOS U ON M.id_usuario = U.id_usuario
+            WHERE M.id_activo = ?
+            ORDER BY M.id_movimiento DESC
+        """, (id_activo,))
+        movimientos = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return movimientos
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/predict")
 def procesar_inspeccion_ia(req: InspeccionRequest):
