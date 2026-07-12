@@ -12,11 +12,11 @@ async function cargarActivos() {
         const response = await fetch(`${API_URL}/api/activos`);
         if (!response.ok) throw new Error("Fallo de red");
         const activos = await response.json();
-        
-        inventarioGlobal = activos; 
+
+        inventarioGlobal = activos;
         document.getElementById('server-status').innerHTML = '<span class="w-3 h-3 rounded-full bg-green-400"></span> Servidor Conectado';
         document.getElementById('server-status').className = "flex items-center gap-2 text-sm font-semibold text-green-400";
-        
+
         let tabla = document.getElementById('tabla-activos');
         tabla.innerHTML = '';
         let operativos = 0, observacion = 0, bloqueados = 0;
@@ -24,8 +24,8 @@ async function cargarActivos() {
         activos.forEach(activo => {
             let badgeClass = "";
             let estado = activo.estado_operativo.toUpperCase();
-            
-            if(estado === "OPERATIVO") {
+
+            if (estado === "OPERATIVO") {
                 badgeClass = "bg-green-100 text-green-800";
                 operativos++;
             } else if (estado.includes("OBSERVACION") || estado.includes("MANTENIMIENTO")) {
@@ -83,13 +83,13 @@ function buscarActivoManual() {
 function abrirEscaner() {
     estadoEscaner = 1;
     qrActivoTemporal = null;
-    
+
     let instruccion = document.getElementById('scanner-instruccion');
     instruccion.innerText = "Paso 1: Escanee el QR de la Máquina/Activo";
     instruccion.className = "text-blue-600 font-bold mb-4 bg-blue-50 p-2 rounded-lg border border-blue-200";
-    
+
     document.getElementById('modal-scanner').classList.remove('hidden');
-    html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: {width: 250, height: 250} }, false);
+    html5QrcodeScanner = new Html5QrcodeScanner("reader", { fps: 10, qrbox: { width: 250, height: 250 } }, false);
     html5QrcodeScanner.render(onScanSuccess, onScanFailure);
 }
 
@@ -97,18 +97,18 @@ function cerrarEscaner() {
     estadoEscaner = 0;
     qrActivoTemporal = null;
     document.getElementById('modal-scanner').classList.add('hidden');
-    if(html5QrcodeScanner) { html5QrcodeScanner.clear(); }
+    if (html5QrcodeScanner) { html5QrcodeScanner.clear(); }
 }
 
 async function onScanSuccess(decodedText, decodedResult) {
     if (estadoEscaner === 1) {
         qrActivoTemporal = decodedText;
         estadoEscaner = 2;
-        
+
         let instruccion = document.getElementById('scanner-instruccion');
         instruccion.innerText = "Paso 2: Escanee el QR de Personal (DNI)";
         instruccion.className = "text-green-600 font-bold mb-4 bg-green-50 p-2 rounded-lg border border-green-200";
-        
+
         // El escáner continuará ejecutándose esperando el QR del personal
     } else if (estadoEscaner === 2) {
         const qrPersonalTemporal = decodedText;
@@ -125,11 +125,11 @@ async function registrarMovimientoActivo(qrActivo, qrPersonal) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
-        
+
         const data = await response.json();
-        
+
         if (!response.ok) throw new Error(data.detail);
-        
+
         alert(`✅ ${data.mensaje}`);
         cargarActivos(); // Refrescar la tabla para ver el cambio de disponibilidad
     } catch (error) {
@@ -143,7 +143,7 @@ function procesarCodigoEscaneado(codigoQR) {
     const maquina = inventarioGlobal.find(a => a.codigo_qr === codigoQR);
     if (maquina) {
         abrirModalInspeccion(maquina.id_activo, maquina.nombre_activo, maquina.codigo_qr);
-        document.getElementById('input-qr-manual').value = ''; 
+        document.getElementById('input-qr-manual').value = '';
     } else {
         alert(`SAMA Alerta: El código [${codigoQR}] no está registrado.`);
     }
@@ -154,7 +154,7 @@ function abrirModalInspeccion(id_activo, nombre, qr) {
     document.getElementById('modal-activo-id').value = id_activo;
     document.getElementById('modal-activo-nombre').value = nombre;
     document.getElementById('modal-qr-label').innerText = "QR: " + qr;
-    
+
     document.getElementById('form-ia').reset();
     document.getElementById('form-ia').classList.remove('hidden');
     document.getElementById('panel-resultado-ia').classList.add('hidden');
@@ -202,7 +202,7 @@ async function ejecutarDiagnosticoIA(event) {
         const panelResultados = document.getElementById('panel-resultado-ia');
         const semaforoHeader = document.getElementById('semaforo-header');
         panelResultados.classList.remove('hidden');
-        
+
         document.getElementById('res-salud').innerText = `${data.indice_salud_pct}%`;
         document.getElementById('res-uso').innerText = data.frecuencia_uso_detectada;
         document.getElementById('resultado-mensaje').innerText = data.mensaje;
@@ -221,7 +221,7 @@ async function ejecutarDiagnosticoIA(event) {
         alert("Fallo crítico: " + error.message);
         console.error(error);
     } finally {
-        btnSubmit.innerText = "🧠 Procesar con Inteligencia Artificial";
+        btnSubmit.innerText = "🧠 Procesar";
         btnSubmit.disabled = false;
     }
 }
@@ -236,14 +236,14 @@ function abrirModalNuevoActivo() {
 
 function abrirModalEditarActivo() {
     if (!window.activoActualQR) return; // Se guarda en abrirModalDetalle
-    
+
     // Cerrar detalle
     cerrarDetalle();
-    
+
     const activo = window.activoActualQR;
     document.getElementById('form-nuevo-activo-titulo').innerText = "✏️ Editar Activo";
     document.getElementById('nuevo-id-activo').value = activo.id_activo;
-    
+
     // Pre-poblar
     document.getElementById('nuevo-qr').value = activo.codigo_qr;
     document.getElementById('nuevo-nombre').value = activo.nombre_activo;
@@ -253,7 +253,7 @@ function abrirModalEditarActivo() {
     document.getElementById('nuevo-marca').value = activo.marca || '';
     document.getElementById('nuevo-serie').value = activo.num_serie || '';
     document.getElementById('nuevo-fecha-compra').value = activo.fecha_compra || '';
-    
+
     document.getElementById('modal-nuevo-activo').classList.remove('hidden');
 }
 
@@ -279,12 +279,12 @@ async function registrarNuevoActivo(event) {
         formData.append('marca', document.getElementById('nuevo-marca').value.trim());
         formData.append('num_serie', document.getElementById('nuevo-serie').value.trim());
         formData.append('fecha_compra', document.getElementById('nuevo-fecha-compra').value);
-        
+
         const fotoInput = document.getElementById('nuevo-foto');
         if (fotoInput.files.length > 0) {
             formData.append('foto', fotoInput.files[0]);
         }
-        
+
         const manualInput = document.getElementById('nuevo-manual');
         if (manualInput.files.length > 0) {
             formData.append('manual', manualInput.files[0]);
@@ -301,7 +301,7 @@ async function registrarNuevoActivo(event) {
         });
 
         const data = await response.json();
-        
+
         if (!response.ok) {
             throw new Error(data.detail || "Error al registrar el activo.");
         }
@@ -325,7 +325,7 @@ function toggleMenu() {
 }
 
 // Cerrar el menú si se hace clic fuera de él
-document.addEventListener('click', function(event) {
+document.addEventListener('click', function (event) {
     const menu = document.getElementById('dropdown-menu');
     const button = event.target.closest('button[onclick="toggleMenu()"]');
     if (!button && !menu.contains(event.target) && !menu.classList.contains('hidden')) {
@@ -354,7 +354,7 @@ async function ejecutarLogin(event) {
         if (!response.ok) throw new Error(data.detail);
 
         usuarioActual = data.usuario;
-        
+
         // Actualizar UI
         document.getElementById('pantalla-login').classList.add('hidden');
         document.getElementById('body-main').classList.remove('overflow-hidden');
@@ -369,7 +369,7 @@ async function ejecutarLogin(event) {
             document.getElementById('btn-registrar-activo').classList.remove('hidden');
             document.getElementById('btn-refrescar-bd').classList.remove('hidden');
         }
-        
+
         if (usuarioActual.id_rol === 1) {
             document.getElementById('btn-gestionar-usuarios').classList.remove('hidden');
         } else {
@@ -397,24 +397,24 @@ function cerrarSesion() {
 
 // --- MI PERFIL ---
 function abrirModalMiPerfil() {
-    if(!usuarioActual) return;
+    if (!usuarioActual) return;
     document.getElementById('perfil-nombre').innerText = usuarioActual.nombre_usuario;
     document.getElementById('perfil-rol').innerText = usuarioActual.rol;
     document.getElementById('perfil-dni').innerText = usuarioActual.dni || 'N/A';
-    
+
     // Generar QR Personal
     const qrContainer = document.getElementById('perfil-qr-container');
-    qrContainer.innerHTML = ''; 
+    qrContainer.innerHTML = '';
     const qrCodeValue = `QR_EMP_${usuarioActual.dni || usuarioActual.id_usuario}`;
     document.getElementById('perfil-qr-texto').innerText = qrCodeValue;
-    
+
     new QRCode(qrContainer, {
         text: qrCodeValue,
         width: 130,
         height: 130,
-        colorDark : "#1e293b",
-        colorLight : "#ffffff",
-        correctLevel : QRCode.CorrectLevel.H
+        colorDark: "#1e293b",
+        colorLight: "#ffffff",
+        correctLevel: QRCode.CorrectLevel.H
     });
 
     document.getElementById('modal-mi-perfil').classList.remove('hidden');
@@ -430,14 +430,14 @@ async function cargarUsuarios() {
         const response = await fetch(`${API_URL}/api/usuarios`);
         if (!response.ok) throw new Error("Fallo al obtener usuarios");
         const usuarios = await response.json();
-        
+
         const tbody = document.getElementById('tabla-usuarios');
         tbody.innerHTML = '';
-        
+
         usuarios.forEach(u => {
             const badgeCls = u.estado_cuenta === 1 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700';
             const estadoTxt = u.estado_cuenta === 1 ? 'Activo' : 'Desactivado';
-            
+
             const tr = document.createElement('tr');
             tr.innerHTML = `
                 <td class="p-3 border-b text-slate-700 font-mono text-xs">${u.dni || 'N/A'}</td>
@@ -482,7 +482,7 @@ function editarUsuarioUi(u) {
     document.getElementById('usuario-pin').value = u.pin;
     document.getElementById('usuario-rol').value = u.id_rol;
     document.getElementById('usuario-estado').value = u.estado_cuenta;
-    
+
     document.getElementById('form-usuario-titulo').innerText = 'Editar Usuario';
     document.getElementById('container-estado').classList.remove('hidden');
 }
@@ -491,7 +491,7 @@ async function guardarUsuario(event) {
     event.preventDefault();
     const id = document.getElementById('usuario-id').value;
     const isEdit = id !== '';
-    
+
     const payload = {
         dni: document.getElementById('usuario-dni').value.trim(),
         nombres_completos: document.getElementById('usuario-nombres').value.trim(),
@@ -500,22 +500,22 @@ async function guardarUsuario(event) {
         id_rol: parseInt(document.getElementById('usuario-rol').value),
         estado_cuenta: isEdit ? parseInt(document.getElementById('usuario-estado').value) : 1
     };
-    
+
     try {
         const url = isEdit ? `${API_URL}/api/usuarios/${id}` : `${API_URL}/api/usuarios`;
         const method = isEdit ? 'PUT' : 'POST';
-        
+
         const response = await fetch(url, {
             method: method,
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         });
-        
+
         if (!response.ok) {
             const data = await response.json();
             throw new Error(data.detail);
         }
-        
+
         limpiarFormUsuario();
         cargarUsuarios();
     } catch (error) {
@@ -541,12 +541,12 @@ function abrirModalDetalle(id_activo) {
 
     document.getElementById('detalle-qr-label').innerText = "QR: " + activo.codigo_qr;
     document.getElementById('detalle-nombre').innerText = activo.nombre_activo;
-    
+
     const categoriaTexto = activo.nombre_categoria || "Sin categoría";
     document.getElementById('detalle-categoria').innerText = categoriaTexto;
     document.getElementById('detalle-categoria-header').innerText = categoriaTexto;
     document.getElementById('detalle-estado').innerText = activo.estado_operativo;
-    
+
     // Asignar color al estado
     const estadoElem = document.getElementById('detalle-estado');
     if (activo.estado_operativo === 'OPERATIVO') estadoElem.className = 'font-bold text-green-600';
@@ -606,11 +606,11 @@ function cerrarDetalle() {
 
 function imprimirQR() {
     if (!window.activoActualQR) return;
-    
+
     const qrUrl = document.getElementById('detalle-qr-img').src;
     const nombre = window.activoActualQR.nombre_activo;
     const codigo = window.activoActualQR.codigo_qr;
-    
+
     const ventanaImpresion = window.open('', '_blank', 'width=400,height=500');
     ventanaImpresion.document.write(`
         <html>
@@ -641,27 +641,27 @@ function imprimirQR() {
 async function abrirModalHistorial() {
     if (!window.activoActualQR) return;
     const id_activo = window.activoActualQR.id_activo;
-    
+
     document.getElementById('modal-historial').classList.remove('hidden');
     const tbody = document.getElementById('tabla-historial');
     tbody.innerHTML = '<tr><td colspan="3" class="text-center p-4 text-slate-500">Cargando historial...</td></tr>';
-    
+
     try {
         const response = await fetch(`${API_URL}/api/movimientos/activo/${id_activo}`);
         const historial = await response.json();
-        
+
         if (!response.ok) throw new Error(historial.detail || "Error al cargar historial");
-        
+
         if (historial.length === 0) {
             tbody.innerHTML = '<tr><td colspan="3" class="text-center p-4 text-slate-500 italic">No hay movimientos registrados.</td></tr>';
             return;
         }
-        
+
         tbody.innerHTML = '';
         historial.forEach(mov => {
             const esRetiro = mov.tipo_movimiento === "RETIRO";
             const badgeClass = esRetiro ? "bg-orange-100 text-orange-800" : "bg-blue-100 text-blue-800";
-            
+
             tbody.innerHTML += `
                 <tr class="border-b border-slate-100">
                     <td class="p-3 whitespace-nowrap text-xs font-mono text-slate-600">${mov.fecha_movimiento}</td>

@@ -9,7 +9,7 @@ import shutil
 
 import sys
 import os
-# Añadimos el directorio padre (02_capa_logica) al PATH para poder importar 'core'
+# Añadimos el directorio padre (logic) al PATH para poder importar 'core'
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 # Importamos el motor de IA desde nuestra capa de lógica de negocio (Core)
@@ -27,13 +27,13 @@ base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 app.mount("/data", StaticFiles(directory=os.path.join(base_dir, 'data')), name="data")
 
 # ---------------------------------------------------------
-# CONFIGURACIÓN CORS (VITAL PARA CONECTAR FLUTTER Y WEB)
+# CONFIGURACIÓN CORS (VITAL PARA EL FRONTEND WEB)
 # ---------------------------------------------------------
-# Habilita que las peticiones del navegador web o del celular en la red local
-# no sean bloqueadas por políticas de seguridad del sistema operativo.
+# Evita que el navegador web (Chrome, Edge) bloquee las peticiones 
+# entre el archivo index.html y este servidor API por políticas de seguridad.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Permite cualquier origen para entorno de concurso/hackathon
+    allow_origins=["*"],  # Permite cualquier origen para entorno de prueba
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -135,7 +135,7 @@ def check_and_migrate_db():
             alerta_bloqueo_disparada INTEGER NOT NULL
         )""")
         
-        # Adaptar ROLES y USUARIOS existentes a la nueva lógica
+        # Adaptar ROLES y USUARIOS existentes a la lógica
         cursor.execute("INSERT OR IGNORE INTO ROLES (id_rol, nombre_rol, permiso_procesar_ia) VALUES (1, 'ADMINISTRADOR', 1)")
         cursor.execute("INSERT OR IGNORE INTO ROLES (id_rol, nombre_rol, permiso_procesar_ia) VALUES (2, 'SUPERVISOR', 1)")
         cursor.execute("INSERT OR IGNORE INTO ROLES (id_rol, nombre_rol, permiso_procesar_ia) VALUES (3, 'OPERARIO', 1)")
@@ -508,7 +508,7 @@ def health_check():
 
 @app.get("/api/activos/escanear/{codigo_qr}")
 def escanear_activo_qr(codigo_qr: str):
-    """Endpoint para la Aplicación Móvil Flutter. Busca el activo por QR al instante."""
+    """Endpoint para escanear y buscar un activo por QR al instante."""
     try:
         conn = get_db_connection()
         cursor = conn.cursor()

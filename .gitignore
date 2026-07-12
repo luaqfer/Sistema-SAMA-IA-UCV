@@ -6,10 +6,6 @@ __pycache__/
 # Node / Frontend
 node_modules/
 
-# Flutter / App Móvil
-build/
-.dart_tool/
-
 # Archivos del sistema operativo
 .DS_Store
 Thumbs.db
