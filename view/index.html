@@ -8,6 +8,7 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     
     <link rel="stylesheet" href="css/styles.css">
 </head>
@@ -15,12 +16,11 @@
 
     <!-- PANTALLA DE LOGIN -->
     <div id="pantalla-login" class="fixed inset-0 bg-blue-900 z-[100] flex items-center justify-center">
-        <div class="bg-white p-8 rounded-2xl shadow-2xl max-w-sm w-full text-center">
-            <div class="text-5xl mb-4">⚙️</div>
-            <h2 class="text-2xl font-black text-slate-800 mb-2">SAMA EAM</h2>
-            <p class="text-slate-500 text-sm mb-6">Ingresa tus credenciales para acceder</p>
+        <div class="bg-white p-8 rounded-2xl shadow-2xl w-full max-w-sm text-center">
+            <h1 class="text-3xl font-black text-blue-900 mb-2">SAMA<span class="text-blue-500">.IA</span></h1>
+            <p class="text-slate-500 mb-8 text-sm">Sistema Autónomo de Mantenimiento de Activos</p>
             
-            <form id="form-login" onsubmit="ejecutarLogin(event)" class="space-y-4">
+            <form id="form-login" onsubmit="ejecutarLogin(event); return false;" class="space-y-4">
                 <div>
                     <input type="text" id="login-user" required placeholder="Usuario (ej. admin)" class="w-full bg-slate-50 border border-slate-300 rounded-lg p-3 text-center focus:ring-2 focus:ring-blue-500 outline-none">
                 </div>
@@ -35,7 +35,8 @@
         </div>
     </div>
 
-    <nav class="bg-blue-900 text-white p-4 shadow-lg flex flex-wrap justify-between items-center gap-4 relative">
+    <!-- BARRA DE NAVEGACIÓN PRINCIPAL -->
+    <nav class="bg-blue-800 text-white p-4 shadow-lg sticky top-0 z-50 flex flex-wrap justify-between items-center gap-4 relative">
         <!-- Left: Hamburger Menu & Logo -->
         <div class="flex items-center gap-4">
             <button onclick="toggleMenu()" class="text-2xl hover:text-blue-300 transition focus:outline-none w-10 h-10 flex items-center justify-center rounded-lg hover:bg-blue-800">
@@ -68,8 +69,8 @@
             <span id="server-status" class="flex items-center gap-2 text-xs font-semibold text-yellow-400 mr-2 hidden md:flex">
                 <span class="w-2 h-2 rounded-full bg-yellow-400"></span> Conectando...
             </span>
-            <input type="text" id="input-qr-manual" placeholder="Ej. QR_EAM_MAQ_001" class="text-slate-800 px-3 py-1.5 rounded-lg text-sm w-32 sm:w-48 outline-none focus:ring-2 focus:ring-blue-400">
-            <button onclick="buscarActivoManual()" class="bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded-lg text-sm font-semibold transition" title="Buscar Activo">🔍</button>
+            <input type="text" id="input-qr-manual" onkeyup="filtrarActivos()" placeholder="Buscar máquina (nombre o ID)..." class="text-slate-800 px-3 py-1.5 rounded-lg text-sm w-32 sm:w-64 outline-none focus:ring-2 focus:ring-blue-400">
+            <button onclick="filtrarActivos()" class="bg-slate-700 hover:bg-slate-600 text-white px-3 py-1.5 rounded-lg text-sm font-semibold transition" title="Buscar Activo">🔍</button>
             <button onclick="abrirEscaner()" class="bg-green-500 hover:bg-green-400 text-white px-3 lg:px-4 py-1.5 rounded-lg text-sm font-bold transition shadow flex items-center gap-2">
                 📷 <span class="hidden lg:inline">Escanear QR</span>
             </button>
@@ -79,60 +80,110 @@
         </div>
     </nav>
 
-    <main class="max-w-7xl mx-auto mt-8 p-4">
-        <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-            <div class="bg-white p-6 rounded-xl shadow border-l-4 border-blue-500">
-                <h3 class="text-slate-500 text-sm font-bold uppercase">Total Activos</h3>
-                <p id="stat-total" class="text-3xl font-bold text-slate-800 mt-2">--</p>
+    <!-- CONTENEDOR PRINCIPAL DEL SISTEMA (DASHBOARD) -->
+    <div class="p-6 max-w-[1600px] mx-auto h-[calc(100vh-80px)] flex flex-col">
+        
+        <!-- CUADRÍCULA PANORÁMICA DE 3 COLUMNAS -->
+        <div class="grid grid-cols-1 xl:grid-cols-12 gap-6 h-full flex-1 min-h-0">
+            
+            <!-- Columna Izquierda: KPIs y Gráfico Financiero (25% ancho en desktop) -->
+            <div class="xl:col-span-3 flex flex-col space-y-6 overflow-y-auto scrollbar-hide pr-2">
+            
+            <!-- Tarjetas de resumen en Grid 2x2 -->
+            <div class="grid grid-cols-2 gap-4">
+                <div class="bg-white p-4 rounded-xl shadow border-l-4 border-blue-500">
+                    <h3 class="text-slate-500 text-xs font-bold uppercase leading-tight">Total Activos</h3>
+                    <p id="stat-total" class="text-2xl font-bold text-slate-800 mt-2">--</p>
+                </div>
+                <div class="bg-white p-4 rounded-xl shadow border-l-4 border-green-500">
+                    <h3 class="text-slate-500 text-xs font-bold uppercase leading-tight">Operativos</h3>
+                    <p id="stat-operativos" class="text-2xl font-bold text-green-600 mt-2">--</p>
+                </div>
+                <div class="bg-white p-4 rounded-xl shadow border-l-4 border-yellow-500">
+                    <h3 class="text-slate-500 text-xs font-bold uppercase leading-tight">Bajo Observ.</h3>
+                    <p id="stat-observacion" class="text-2xl font-bold text-yellow-600 mt-2">--</p>
+                </div>
+                <div class="bg-white p-4 rounded-xl shadow border-l-4 border-red-500" id="card-bloqueados">
+                    <h3 class="text-slate-500 text-xs font-bold uppercase leading-tight">Críticos</h3>
+                    <p id="stat-bloqueados" class="text-2xl font-bold text-red-600 mt-2">--</p>
+                </div>
             </div>
-            <div class="bg-white p-6 rounded-xl shadow border-l-4 border-green-500">
-                <h3 class="text-slate-500 text-sm font-bold uppercase">Operativos</h3>
-                <p id="stat-operativos" class="text-3xl font-bold text-green-600 mt-2">--</p>
+
+            <!-- Business Metrics Panel -->
+            <div class="bg-white rounded-xl shadow p-6 flex flex-col items-center">
+                <div class="w-full max-w-[220px] mb-6">
+                    <canvas id="chartPatrimonio"></canvas>
+                </div>
+                <div class="w-full text-center">
+                    <h2 class="text-lg font-bold text-slate-800 mb-2">Costo Patrimonial Total Protegido por IA</h2>
+                    <p class="text-slate-500 mb-4 text-xs">Distribución financiera del inventario según la salud predictiva y estado de operación. Monitoreado en tiempo real.</p>
+                    <div class="text-3xl font-black text-blue-700 font-mono tracking-tighter" id="total-financiero-label">S/ 0.00</div>
+                </div>
             </div>
-            <div class="bg-white p-6 rounded-xl shadow border-l-4 border-yellow-500">
-                <h3 class="text-slate-500 text-sm font-bold uppercase">Bajo Observación</h3>
-                <p id="stat-observacion" class="text-3xl font-bold text-yellow-600 mt-2">--</p>
+
             </div>
-            <div class="bg-white p-6 rounded-xl shadow border-l-4 border-red-500" id="card-bloqueados">
-                <h3 class="text-slate-500 text-sm font-bold uppercase">Críticos</h3>
-                <p id="stat-bloqueados" class="text-3xl font-bold text-red-600 mt-2">--</p>
+
+            <!-- Columna Central: Tabla Principal de Inventario (50% ancho en desktop) -->
+            <div class="xl:col-span-6">
+            <div class="bg-white rounded-xl shadow overflow-hidden h-full max-h-[80vh] flex flex-col">
+                <div class="p-5 border-b border-slate-200 bg-slate-50 flex justify-between items-center z-10">
+                    <h2 class="text-lg font-bold text-slate-700">Inventario Patrimonial en Red Local</h2>
+                    <button onclick="cargarActivos()" id="btn-refrescar-bd" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition">🔄 Refrescar BD</button>
+                </div>
+                <div class="overflow-auto flex-1 scrollbar-thin">
+                    <table class="w-full text-left border-collapse relative">
+                        <thead class="sticky top-0 bg-slate-100 z-10 shadow-sm">
+                            <tr class="bg-slate-100 text-slate-500 text-xs uppercase tracking-wider">
+                                <th class="p-4 font-semibold">QR ID</th>
+                                <th class="p-4 font-semibold">Máquina / Equipo</th>
+                                <th class="p-4 font-semibold text-left">Valor</th>
+                                <th class="p-4 font-semibold text-left">Diagnóstico IA</th>
+                                <th class="p-4 font-semibold text-left">Mantenimiento Preventivo</th>
+                                <th class="p-4 font-semibold text-left">Estado de Operación</th>
+                                <th class="p-4 font-semibold">Disponibilidad</th>
+                                <th class="p-4 font-semibold text-center">Acción</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tabla-activos" class="text-sm divide-y divide-slate-200">
+                            <tr><td colspan="8" class="p-8 text-center text-slate-500">Conectando a SAMA Backend...</td></tr>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </div>
 
-        <div class="bg-white rounded-xl shadow overflow-hidden">
-            <div class="p-5 border-b border-slate-200 bg-slate-50 flex justify-between items-center">
-                <h2 class="text-lg font-bold text-slate-700">Inventario Patrimonial en Red Local</h2>
-                <button onclick="cargarActivos()" id="btn-refrescar-bd" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-semibold transition">🔄 Refrescar BD</button>
-            </div>
-            <div class="overflow-x-auto">
-                <table class="w-full text-left border-collapse">
-                    <thead>
-                        <tr class="bg-slate-100 text-slate-500 text-xs uppercase tracking-wider">
-                            <th class="p-4 font-semibold">QR ID</th>
-                            <th class="p-4 font-semibold">Máquina / Equipo</th>
-                            <th class="p-4 font-semibold">Valor</th>
-                            <th class="p-4 font-semibold">Estado de Operación</th>
-                            <th class="p-4 font-semibold">Disponibilidad</th>
-                            <th class="p-4 font-semibold text-center">Acción</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tabla-activos" class="text-sm divide-y divide-slate-200">
-                        <tr><td colspan="6" class="p-8 text-center text-slate-500">Conectando a SAMA Backend...</td></tr>
-                    </tbody>
-                </table>
+            <!-- Columna Derecha: Panel de Historial Clínico IA (25% ancho en desktop) -->
+            <div class="xl:col-span-3 hidden xl:block">
+            <div class="bg-white rounded-xl shadow p-5 flex flex-col h-full max-h-[80vh]">
+                <h2 class="text-md font-bold text-slate-800 mb-3 flex items-center gap-2">🏥 Historial Clínico IA</h2>
+                <div id="lista-alertas-ia" class="flex flex-col gap-3 overflow-y-auto pr-2 scrollbar-thin flex-1">
+                    <p class="text-xs text-slate-400 text-center italic py-4">Cargando bitácora...</p>
+                </div>
             </div>
         </div>
     </main>
 
+    <!-- MODAL ESCÁNER -->
     <div id="modal-scanner" class="fixed inset-0 bg-slate-900/90 backdrop-blur-sm hidden flex flex-col items-center justify-center p-4 z-50">
         <div class="bg-white p-6 rounded-2xl shadow-2xl max-w-md w-full text-center">
             <h3 class="font-bold text-xl text-slate-800 mb-2">Retiro y Devolución</h3>
             <p id="scanner-instruccion" class="text-blue-600 font-bold mb-4 bg-blue-50 p-2 rounded-lg border border-blue-200">Paso 1: Escanee el QR de la Máquina/Activo</p>
             <div id="reader" class="w-full rounded-lg overflow-hidden border-2 border-dashed border-blue-400 mb-4 bg-slate-50 min-h-[250px]"></div>
+            
+            <!-- Entrada Manual de QR -->
+            <div class="mb-4 text-left">
+                <p class="text-xs text-slate-500 mb-2 font-bold uppercase text-center">¿Sin cámara? Búsqueda Manual</p>
+                <div class="flex gap-2">
+                    <input type="text" id="input-manual-scanner" class="flex-1 border border-slate-300 rounded-lg px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500 focus:outline-none" placeholder="Ingrese QR, ID o Nombre..." autocomplete="off" onkeypress="if(event.key === 'Enter') procesarEntradaManual()">
+                    <button onclick="procesarEntradaManual()" class="bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg text-sm font-bold transition shadow">Buscar</button>
+                </div>
+            </div>
+
             <button onclick="cerrarEscaner()" class="mt-2 bg-slate-100 text-slate-600 font-bold px-6 py-2 rounded-lg hover:bg-slate-200 transition w-full">Cancelar Proceso</button>
         </div>
     </div>
 
+    <!-- MODAL INSPECCIÓN IA -->
     <div id="modal-inspeccion" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50">
         <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200">
             <div class="bg-blue-900 text-white p-5 flex justify-between items-center">
@@ -206,6 +257,7 @@
         </div>
     </div>
 
+    <!-- MODAL NUEVO ACTIVO -->
     <div id="modal-nuevo-activo" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50 overflow-y-auto">
         <div class="bg-white rounded-2xl shadow-2xl max-w-lg w-full overflow-hidden border border-slate-200 my-8">
             <div class="bg-blue-900 text-white p-5 flex justify-between items-center">
@@ -269,6 +321,7 @@
         </div>
     </div>
 
+    <!-- MODAL DETALLE -->
     <div id="modal-detalle" class="fixed inset-0 bg-slate-900/60 backdrop-blur-sm hidden flex items-center justify-center p-4 z-50">
         <div class="bg-white rounded-2xl shadow-2xl max-w-4xl w-full overflow-hidden border border-slate-200">
             <div class="bg-blue-900 text-white p-5 flex justify-between items-center">
@@ -324,6 +377,33 @@
                         <div class="col-span-2">
                             <span class="font-bold">Fecha de Compra:</span>
                             <div id="detalle-fecha">--</div>
+                        </div>
+                    </div>
+                    
+                    <!-- Argumentación del Motor Difuso -->
+                    <div id="detalle-ia-panel" class="hidden mt-2 bg-slate-900 rounded-lg p-4 border border-slate-700 shadow-inner">
+                        <h4 class="text-sm text-blue-400 font-bold mb-3 flex items-center gap-2">🧠 Argumentación del Motor Difuso</h4>
+                        <div class="space-y-2 text-xs font-mono text-slate-300">
+                            <div class="flex justify-between border-b border-slate-700 pb-1">
+                                <span>Anomalía Operativa (Vibración):</span>
+                                <span id="ia-anomalia">--</span>
+                            </div>
+                            <div class="flex justify-between border-b border-slate-700 pb-1">
+                                <span>Integridad Estructural (Fatiga):</span>
+                                <span id="ia-integridad">--</span>
+                            </div>
+                            <div class="flex justify-between border-b border-slate-700 pb-1">
+                                <span>Temperatura de Trabajo:</span>
+                                <span id="ia-temperatura">--</span>
+                            </div>
+                            <div class="flex justify-between border-b border-slate-700 pb-1">
+                                <span>Historial de Uso (Kardex):</span>
+                                <span id="ia-uso">--</span>
+                            </div>
+                            <div class="flex justify-between pt-2 text-sm text-white font-bold">
+                                <span>Índice de Salud Resultante:</span>
+                                <span id="ia-resultado">--</span>
+                            </div>
                         </div>
                     </div>
                     
@@ -477,6 +557,6 @@
         </div>
     </div>
 
-    <script src="js/app.js?v=6.0"></script>
+    <script src="js/app.js?v=7.4"></script>
 </body>
 </html>

@@ -5,7 +5,11 @@ let inventarioGlobal = [];
 let html5QrcodeScanner = null;
 let usuarioActual = null;
 
-// 1. CARGA INICIAL (Solo si hay sesión)
+/**
+ * Carga el inventario de activos desde el backend.
+ * Calcula variables dinámicas como el color del semáforo, el nivel de uso (Kardex) y 
+ * renderiza cada fila de la tabla principal. Se ejecuta tras un login exitoso.
+ */
 async function cargarActivos() {
     if (!usuarioActual) return;
     try {
@@ -25,28 +29,58 @@ async function cargarActivos() {
             let badgeClass = "";
             let estado = activo.estado_operativo.toUpperCase();
 
-            if (estado === "OPERATIVO") {
-                badgeClass = "bg-green-100 text-green-800";
-                operativos++;
-            } else if (estado.includes("OBSERVACION") || estado.includes("MANTENIMIENTO")) {
-                badgeClass = "bg-yellow-100 text-yellow-800 font-bold";
-                observacion++;
-            } else {
+            let estadoOpText = activo.estado_operativo;
+            let estadoUsoText = activo.estado_uso;
+            
+            if (estado === "INOPERATIVO (BLOQUEADO)") {
                 badgeClass = "bg-red-100 text-red-800 font-black border border-red-300 pulse-red";
                 bloqueados++;
+                estadoOpText = "INOPERATIVO";
+                estadoUsoText = "BLOQUEADO";
+            } else if (estado === "OPERATIVO") {
+                badgeClass = "bg-green-100 text-green-800";
+                operativos++;
+            } else {
+                badgeClass = "bg-yellow-100 text-yellow-800";
+                observacion++;
             }
 
-            let badgeUsoClass = activo.estado_uso === "DISPONIBLE" ? "bg-blue-100 text-blue-800" : "bg-orange-100 text-orange-800";
+            let badgeUsoClass = estadoUsoText === "DISPONIBLE" ? "bg-blue-100 text-blue-800" : (estadoUsoText === "BLOQUEADO" ? "bg-red-100 text-red-800 font-bold" : "bg-orange-100 text-orange-800");
             let responsableTxt = activo.estado_uso === "EN USO" && activo.usuario_responsable_nombre ? `<br><span class="text-[10px] font-bold text-slate-500 uppercase">Resp: ${activo.usuario_responsable_nombre}</span>` : "";
+
+            let diagIA = activo.ultimo_diagnostico_ia !== null ? activo.ultimo_diagnostico_ia.toFixed(1) + "%" : "Sin Datos";
+            let diagColor = "text-slate-400 font-mono";
+            if (activo.ultimo_diagnostico_ia !== null) {
+                if (activo.ultimo_diagnostico_ia > 60) diagColor = "text-green-600 font-bold";
+                else if (activo.ultimo_diagnostico_ia > 40) diagColor = "text-yellow-600 font-bold";
+                else diagColor = "text-red-600 font-bold";
+            }
+
+            let usosMant = activo.usos_para_mantenimiento !== undefined ? activo.usos_para_mantenimiento : 30;
+            let mantColor = "text-green-600";
+            let mantIcon = "✅";
+            if (usosMant <= 10 && usosMant > 3) {
+                mantColor = "text-yellow-600 font-bold";
+                mantIcon = "⚠️";
+            } else if (usosMant <= 3) {
+                mantColor = "text-red-600 font-bold pulse-red";
+                mantIcon = "🚨";
+            }
+            let mantTexto = `<span class="flex items-center gap-1 ${mantColor} text-xs"><span title="Faltan ${usosMant} usos para el servicio preventivo">${mantIcon} En ${usosMant} usos</span></span>`;
 
             tabla.innerHTML += `
                 <tr class="hover:bg-slate-50">
                     <td class="p-4 font-mono text-slate-500 text-xs">${activo.codigo_qr}</td>
-                    <td class="p-4 font-bold text-slate-800">${activo.nombre_activo}</td>
+                    <td class="p-4 font-bold text-slate-800 flex flex-col">
+                        <span>${activo.nombre_activo}</span>
+                        <span class="text-[10px] font-semibold text-slate-400 mt-0.5">${activo.nombre_categoria || "Sin categoría"}</span>
+                    </td>
                     <td class="p-4 text-slate-600 font-mono text-xs">S/ ${activo.valor_adquisicion.toFixed(2)}</td>
-                    <td class="p-4"><span class="px-3 py-1 rounded-full text-xs ${badgeClass}">${activo.estado_operativo}</span></td>
+                    <td class="p-4 ${diagColor} text-sm">${diagIA}</td>
+                    <td class="p-4">${mantTexto}</td>
+                    <td class="p-4"><span class="px-3 py-1 rounded-full text-xs ${badgeClass}">${estadoOpText}</span></td>
                     <td class="p-4">
-                        <span class="px-3 py-1 rounded-full text-xs font-bold ${badgeUsoClass}">${activo.estado_uso}</span>
+                        <span class="px-3 py-1 rounded-full text-xs font-bold ${badgeUsoClass}">${estadoUsoText}</span>
                         ${responsableTxt}
                     </td>
                     <td class="p-4 text-center space-x-2">
@@ -66,20 +100,130 @@ async function cargarActivos() {
         document.getElementById('stat-observacion').innerText = observacion;
         document.getElementById('stat-bloqueados').innerText = bloqueados;
         document.getElementById('card-bloqueados').className = bloqueados > 0 ? "bg-white p-6 rounded-xl shadow border-l-4 border-red-500 pulse-red" : "bg-white p-6 rounded-xl shadow border-l-4 border-red-500";
+        
+        renderizarGraficoFinanciero(activos);
+        cargarHistorialClinicoIA(); // Refrescar bitácora IA
     } catch (error) {
         document.getElementById('tabla-activos').innerHTML = `<tr><td colspan="5" class="p-8 text-center text-red-500 font-bold">⚠️ Error: SAMA Backend desconectado.</td></tr>`;
     }
+}
+
+async function cargarHistorialClinicoIA() {
+    try {
+        const response = await fetch(`${API_URL}/api/ia/historial`);
+        if (!response.ok) return;
+        const historial = await response.json();
+        const lista = document.getElementById('lista-alertas-ia');
+        
+        if (historial.length === 0) {
+            lista.innerHTML = '<p class="text-xs text-slate-400 text-center italic py-4">No hay inspecciones recientes.</p>';
+            return;
+        }
+
+        lista.innerHTML = '';
+        historial.forEach(item => {
+            let fecha = item.fecha_hora_proceso;
+            if (fecha.includes('T')) fecha = fecha.substring(0, 16).replace('T', ' ');
+
+            let porcentaje = (item.resultado_indice_salud).toFixed(1) + "%";
+            let esBloqueo = item.alerta_bloqueo_disparada === 1;
+            
+            let icono = esBloqueo ? "🔴" : "🟢";
+            let titulo = esBloqueo ? "BLOQUEO AUTÓNOMO EN CALIENTE" : "INSPECCIÓN REGULAR";
+            let desc = esBloqueo 
+                ? `Activo <strong>${item.nombre_activo}</strong> fue retirado de operación. Motivo: Índice de Salud (${porcentaje}) inferior al umbral de seguridad.`
+                : `Activo <strong>${item.nombre_activo}</strong> inspeccionado con ${porcentaje} de salud operativa.`;
+
+            let bgClass = esBloqueo ? "bg-red-50 border-red-200" : "bg-green-50 border-green-200";
+            let titleClass = esBloqueo ? "text-red-700" : "text-green-700";
+
+            lista.innerHTML += `
+                <div class="p-3 border rounded-lg ${bgClass} text-xs">
+                    <div class="flex justify-between items-start mb-1">
+                        <span class="font-bold ${titleClass}">${icono} ${titulo}</span>
+                        <span class="text-slate-400 font-mono text-[10px]">${fecha}</span>
+                    </div>
+                    <p class="text-slate-600">${desc}</p>
+                </div>
+            `;
+        });
+    } catch (error) {
+        console.error("Error cargando bitácora IA:", error);
+    }
+}
+
+let chartPatrimonioInstancia = null;
+function renderizarGraficoFinanciero(activos) {
+    let valorOperativo = 0;
+    let valorObservacion = 0;
+    let valorCritico = 0;
+
+    activos.forEach(a => {
+        let estado = a.estado_operativo.toUpperCase();
+        if (estado === "OPERATIVO") valorOperativo += a.valor_adquisicion;
+        else if (estado.includes("OBSERVACION") || estado.includes("MANTENIMIENTO")) valorObservacion += a.valor_adquisicion;
+        else valorCritico += a.valor_adquisicion;
+    });
+
+    let totalStr = (valorOperativo + valorObservacion + valorCritico).toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+    document.getElementById('total-financiero-label').innerText = `S/ ${totalStr}`;
+
+    const ctx = document.getElementById('chartPatrimonio').getContext('2d');
+    
+    if (chartPatrimonioInstancia) {
+        chartPatrimonioInstancia.destroy();
+    }
+
+    let lblOperativo = `Operativo (S/ ${valorOperativo.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`;
+    let lblObservacion = `Observación (S/ ${valorObservacion.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`;
+    let lblCritico = `Crítico (S/ ${valorCritico.toLocaleString('es-PE', { minimumFractionDigits: 2, maximumFractionDigits: 2 })})`;
+
+    chartPatrimonioInstancia = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: [lblOperativo, lblObservacion, lblCritico],
+            datasets: [{
+                data: [valorOperativo, valorObservacion, valorCritico],
+                backgroundColor: ['#22c55e', '#eab308', '#ef4444'],
+                borderWidth: 0,
+                hoverOffset: 10
+            }]
+        },
+        options: {
+            responsive: true,
+            cutout: '75%',
+            plugins: {
+                legend: { position: 'bottom', labels: { font: { size: 10 } } }
+            }
+        }
+    });
 }
 
 // 2. CONTROL DEL ESCÁNER QR Y BÚSQUEDA
 let estadoEscaner = 0; // 0: inactivo, 1: escaneando activo, 2: escaneando personal
 let qrActivoTemporal = null;
 
-function buscarActivoManual() {
-    let qrBuscado = document.getElementById('input-qr-manual').value.trim();
-    procesarCodigoEscaneado(qrBuscado);
+/**
+ * Filtra la tabla de activos en tiempo real usando el campo de búsqueda manual.
+ */
+function filtrarActivos() {
+    let textoBusqueda = document.getElementById('input-qr-manual').value.toLowerCase().trim();
+    let filas = document.querySelectorAll('#tabla-activos tr');
+    
+    filas.forEach(fila => {
+        let textoFila = fila.innerText.toLowerCase();
+        if (textoFila.includes(textoBusqueda)) {
+            fila.style.display = "";
+        } else {
+            fila.style.display = "none";
+        }
+    });
 }
 
+/**
+ * Inicializa la cámara web y prepara el motor Html5QrcodeScanner para 
+ * escanear primero el Activo y luego al Personal responsable.
+ */
 function abrirEscaner() {
     estadoEscaner = 1;
     qrActivoTemporal = null;
@@ -100,6 +244,10 @@ function cerrarEscaner() {
     if (html5QrcodeScanner) { html5QrcodeScanner.clear(); }
 }
 
+/**
+ * Callback ejecutado automáticamente cuando la cámara detecta un código QR válido.
+ * Utiliza una máquina de estados (estadoEscaner) para saber si debe leer Activo o Personal.
+ */
 async function onScanSuccess(decodedText, decodedResult) {
     if (estadoEscaner === 1) {
         qrActivoTemporal = decodedText;
@@ -112,11 +260,25 @@ async function onScanSuccess(decodedText, decodedResult) {
         // El escáner continuará ejecutándose esperando el QR del personal
     } else if (estadoEscaner === 2) {
         const qrPersonalTemporal = decodedText;
+        const qrActivo = qrActivoTemporal;
         cerrarEscaner(); // Cerramos y detenemos cámara inmediatamente
-        await registrarMovimientoActivo(qrActivoTemporal, qrPersonalTemporal);
+        await registrarMovimientoActivo(qrActivo, qrPersonalTemporal);
     }
 }
 
+function procesarEntradaManual() {
+    let input = document.getElementById('input-manual-scanner');
+    let valor = input.value.trim();
+    if (!valor) return;
+    
+    input.value = ''; // limpiar campo
+    onScanSuccess(valor, null); // simular que la cámara lo leyó
+}
+
+/**
+ * Envía el par (QR Activo + QR Personal) al backend para registrar un movimiento en el Kardex.
+ * El backend determinará automáticamente si es un Retiro o una Devolución.
+ */
 async function registrarMovimientoActivo(qrActivo, qrPersonal) {
     try {
         const payload = { qr_activo: qrActivo, qr_personal: qrPersonal };
@@ -128,7 +290,11 @@ async function registrarMovimientoActivo(qrActivo, qrPersonal) {
 
         const data = await response.json();
 
-        if (!response.ok) throw new Error(data.detail);
+        if (!response.ok) {
+            let errorMsg = data.detail;
+            if (Array.isArray(errorMsg)) errorMsg = errorMsg.map(e => e.msg).join(", ");
+            throw new Error(errorMsg || "Error interno del servidor");
+        }
 
         alert(`✅ ${data.mensaje}`);
         cargarActivos(); // Refrescar la tabla para ver el cambio de disponibilidad
@@ -170,6 +336,10 @@ function resetearInspeccion() {
     cargarActivos();
 }
 
+/**
+ * Construye el payload de inspección recopilando los valores del modal,
+ * invoca a la Inteligencia Artificial del backend y pinta la resolución final.
+ */
 async function ejecutarDiagnosticoIA(event) {
     event.preventDefault();
     const btnSubmit = document.getElementById('btn-submit-ia');
@@ -333,6 +503,10 @@ document.addEventListener('click', function (event) {
     }
 });
 
+/**
+ * Realiza el flujo de autenticación del usuario, ocultando la pantalla 
+ * principal hasta validar el pin y rol.
+ */
 async function ejecutarLogin(event) {
     event.preventDefault();
     const btn = document.getElementById('btn-login');
@@ -376,7 +550,8 @@ async function ejecutarLogin(event) {
             document.getElementById('btn-gestionar-usuarios').classList.add('hidden');
         }
 
-        cargarActivos(); // Cargar datos ahora que hay sesión
+        await cargarActivos(); // Cargar datos ahora que hay sesión
+
     } catch (error) {
         alert("Acceso denegado: " + error.message);
     } finally {
@@ -535,7 +710,7 @@ async function eliminarUsuario(id_usuario) {
 }
 
 // --- MODAL DE DETALLES ---
-function abrirModalDetalle(id_activo) {
+async function abrirModalDetalle(id_activo) {
     const activo = inventarioGlobal.find(a => a.id_activo === id_activo);
     if (!activo) return;
 
@@ -595,6 +770,32 @@ function abrirModalDetalle(id_activo) {
     } else {
         manualElem.classList.add('hidden');
         sinManualElem.classList.remove('hidden');
+    }
+    // Cargar Argumentación IA
+    try {
+        const resIA = await fetch(`${API_URL}/api/ia/diagnostico-detalle/${id_activo}`);
+        if (resIA.ok) {
+            const detalleIA = await resIA.json();
+            if (detalleIA && detalleIA.num_anomalia !== null) {
+                document.getElementById('detalle-ia-panel').classList.remove('hidden');
+                
+                let tempText = detalleIA.num_temperatura > 7 ? "Recalentamiento" : (detalleIA.num_temperatura > 3 ? "Normal" : "Baja");
+
+                document.getElementById('ia-anomalia').innerText = `${detalleIA.num_anomalia} / 10 (${detalleIA.var_anomalia_operativa})`;
+                document.getElementById('ia-integridad').innerText = `${detalleIA.num_integridad} / 10 (${detalleIA.var_integridad_estruct})`;
+                document.getElementById('ia-temperatura').innerText = `${detalleIA.num_temperatura} / 10 (${tempText})`;
+                document.getElementById('ia-uso').innerText = detalleIA.var_frecuencia_uso;
+                
+                let pct = detalleIA.resultado_indice_salud.toFixed(1) + "%";
+                document.getElementById('ia-resultado').innerText = pct;
+                document.getElementById('ia-resultado').className = detalleIA.resultado_indice_salud < 40 ? "text-red-400 font-black" : "text-green-400 font-black";
+            } else {
+                document.getElementById('detalle-ia-panel').classList.add('hidden');
+            }
+        }
+    } catch (e) {
+        console.error("Error cargando detalle IA:", e);
+        document.getElementById('detalle-ia-panel').classList.add('hidden');
     }
 
     document.getElementById('modal-detalle').classList.remove('hidden');
@@ -661,10 +862,15 @@ async function abrirModalHistorial() {
         historial.forEach(mov => {
             const esRetiro = mov.tipo_movimiento === "RETIRO";
             const badgeClass = esRetiro ? "bg-orange-100 text-orange-800" : "bg-blue-100 text-blue-800";
+            
+            let fechaFormateada = mov.fecha_movimiento;
+            if (fechaFormateada.includes('T')) {
+                fechaFormateada = fechaFormateada.substring(0, 16).replace('T', ' a las ');
+            }
 
             tbody.innerHTML += `
                 <tr class="border-b border-slate-100">
-                    <td class="p-3 whitespace-nowrap text-xs font-mono text-slate-600">${mov.fecha_movimiento}</td>
+                    <td class="p-3 whitespace-nowrap text-xs font-mono text-slate-600">${fechaFormateada}</td>
                     <td class="p-3"><span class="px-2 py-1 rounded text-xs font-bold ${badgeClass}">${mov.tipo_movimiento}</span></td>
                     <td class="p-3 font-semibold text-slate-700">${mov.nombres_completos || 'Desconocido'}</td>
                 </tr>

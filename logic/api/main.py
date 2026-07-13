@@ -39,17 +39,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Modelos de Datos de Entrada (Pydantic para validación estricta de payloads)
-class NuevoActivoRequest(BaseModel):
-    codigo_qr: str
-    nombre_activo: str
-    id_categoria: int
-    valor_adquisicion: float
-    ubicacion: str
-    marca: str
-    num_serie: str
-    fecha_compra: str
-
+# Modelos de Datos de Entrada (Pydantic para validación estricta de payloads JSON)
 class InspeccionRequest(BaseModel):
     id_activo: int
     id_usuario: int
@@ -83,6 +73,10 @@ class MovimientoQRRequest(BaseModel):
 
 
 def get_db_connection():
+    """
+    Establece y retorna una conexión a la base de datos SQLite.
+    Se utiliza sqlite3.Row para poder acceder a las columnas por su nombre en lugar de por índice.
+    """
     # Resolvemos la ruta a data dinámicamente según la nueva arquitectura
     base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     db_path = os.path.join(base_dir, 'data', 'database', 'eam_ia_database.db')
@@ -177,6 +171,10 @@ check_and_migrate_db()
 
 @app.post("/api/login")
 def login(request: LoginRequest):
+    """
+    Endpoint para autenticar a un usuario mediante su username y PIN de 4 dígitos.
+    Valida en la tabla USUARIOS y retorna el perfil del usuario junto con su Rol si las credenciales son correctas.
+    """
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -264,8 +262,31 @@ def eliminar_usuario(id_usuario: int):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.get("/api/ia/historial")
+def obtener_historial_ia():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT h.fecha_hora_proceso, h.resultado_indice_salud, h.alerta_bloqueo_disparada, a.nombre_activo
+            FROM HISTORIAL_INSPECCIONES_IA h
+            JOIN ACTIVOS a ON h.id_activo = a.id_activo
+            ORDER BY h.id_inspeccion DESC
+            LIMIT 7
+        """)
+        historial = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return historial
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @app.get("/api/activos")
 def obtener_activos():
+    """
+    Recupera el inventario patrimonial completo de activos desde la base de datos.
+    Calcula al vuelo (On-the-fly) el estado de mantenimiento preventivo basado en el Kardex (uso real),
+    e inyecta el resultado del último diagnóstico de la Inteligencia Artificial.
+    """
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -277,7 +298,7 @@ def obtener_activos():
         """)
         activos = [dict(row) for row in cursor.fetchall()]
         
-        # Enriquecer con el nombre del usuario responsable si lo hay
+        # Enriquecer con el nombre del usuario responsable si lo hay, y último diagnóstico IA
         for activo in activos:
             if activo['id_usuario_responsable']:
                 cursor.execute("SELECT nombres_completos FROM USUARIOS WHERE id_usuario = ?", (activo['id_usuario_responsable'],))
@@ -285,6 +306,19 @@ def obtener_activos():
                 activo['usuario_responsable_nombre'] = user['nombres_completos'] if user else 'Desconocido'
             else:
                 activo['usuario_responsable_nombre'] = None
+                
+            # Obtener el último diagnóstico IA
+            cursor.execute("SELECT resultado_indice_salud FROM HISTORIAL_INSPECCIONES_IA WHERE id_activo = ? ORDER BY id_inspeccion DESC LIMIT 1", (activo['id_activo'],))
+            diag = cursor.fetchone()
+            activo['ultimo_diagnostico_ia'] = diag['resultado_indice_salud'] if diag else None
+
+            # Calcular "Mantenimiento Preventivo" basado en Kardex (Retiros)
+            # Supongamos que cada activo requiere mantenimiento cada 30 usos (retiros)
+            cursor.execute("SELECT COUNT(id_movimiento) as total_retiros FROM MOVIMIENTOS_ACTIVOS WHERE id_activo = ? AND tipo_movimiento = 'RETIRO'", (activo['id_activo'],))
+            retiros_row = cursor.fetchone()
+            total_retiros = retiros_row['total_retiros'] if retiros_row else 0
+            usos_restantes = 30 - (total_retiros % 30)
+            activo['usos_para_mantenimiento'] = usos_restantes
 
         conn.close()
         return activos
@@ -293,21 +327,37 @@ def obtener_activos():
 
 @app.post("/api/movimientos/qr")
 def procesar_movimiento_qr(req: MovimientoQRRequest):
+    """
+    Procesa un retiro o devolución de un activo escaneando su QR y el QR del responsable (DNI/ID).
+    Bloquea automáticamente la transacción si la IA previamente catalogó el activo como "INOPERATIVO".
+    Actualiza el Kardex (historial de movimientos) y cambia el estado de DISPONIBLE a EN USO (o viceversa).
+    """
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
         
         # 1. Verificar Activo
-        cursor.execute("SELECT id_activo, nombre_activo, COALESCE(estado_uso, 'DISPONIBLE') as estado_uso FROM ACTIVOS WHERE codigo_qr = ?", (req.qr_activo,))
+        cursor.execute("""
+            SELECT id_activo, nombre_activo, estado_operativo, COALESCE(estado_uso, 'DISPONIBLE') as estado_uso 
+            FROM ACTIVOS 
+            WHERE codigo_qr = ? OR CAST(id_activo as TEXT) = ? OR nombre_activo COLLATE NOCASE = ?
+        """, (req.qr_activo, req.qr_activo, req.qr_activo))
         activo = cursor.fetchone()
         if not activo:
-            raise HTTPException(status_code=404, detail="El QR del activo no corresponde a ninguna máquina registrada.")
+            raise HTTPException(status_code=404, detail="No se encontró ninguna máquina con ese QR, ID o Nombre.")
             
-        # 2. Verificar Usuario (Personal) usando su DNI
-        cursor.execute("SELECT id_usuario, nombres_completos, estado_cuenta FROM USUARIOS WHERE dni = ?", (req.qr_personal,))
+        if activo['estado_operativo'] == "INOPERATIVO (BLOQUEADO)":
+            raise HTTPException(status_code=403, detail="Este activo está bloqueado por Inteligencia Artificial y requiere mantenimiento urgente.")
+            
+        # 2. Verificar Usuario (Personal) usando su DNI, ID o Nombre
+        cursor.execute("""
+            SELECT id_usuario, nombres_completos, estado_cuenta 
+            FROM USUARIOS 
+            WHERE dni = ? OR CAST(id_usuario as TEXT) = ? OR nombres_completos COLLATE NOCASE = ?
+        """, (req.qr_personal, req.qr_personal, req.qr_personal))
         usuario = cursor.fetchone()
         if not usuario:
-            raise HTTPException(status_code=404, detail="El QR de personal (DNI) no está registrado.")
+            raise HTTPException(status_code=404, detail="No se encontró ningún personal con ese DNI, ID o Nombre.")
         if usuario['estado_cuenta'] != 1:
             raise HTTPException(status_code=403, detail="El usuario se encuentra desactivado.")
             
@@ -531,6 +581,10 @@ def escanear_activo_qr(codigo_qr: str):
 
 @app.get("/api/movimientos/activo/{id_activo}")
 def obtener_historial_movimientos(id_activo: int):
+    """
+    Recupera la bitácora de movimientos físicos (Kardex) de un activo específico.
+    Muestra quién retiró o devolvió el equipo y en qué fecha.
+    """
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
@@ -609,8 +663,8 @@ def procesar_inspeccion_ia(req: InspeccionRequest):
         # Guardamos el registro inmutable en el historial clínico (Auditoría)
         cursor.execute("""
             INSERT INTO HISTORIAL_INSPECCIONES_IA 
-            (id_activo, id_usuario, fecha_hora_proceso, var_frecuencia_uso, var_anomalia_operativa, var_integridad_estruct, resultado_indice_salud, alerta_bloqueo_disparada)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (id_activo, id_usuario, fecha_hora_proceso, var_frecuencia_uso, var_anomalia_operativa, var_integridad_estruct, resultado_indice_salud, alerta_bloqueo_disparada, num_anomalia, num_integridad, num_temperatura)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """, (
             req.id_activo, 
             req.id_usuario, 
@@ -619,7 +673,10 @@ def procesar_inspeccion_ia(req: InspeccionRequest):
             "Severa" if req.anomalia_operativa > 7 else ("Moderada" if req.anomalia_operativa > 3 else "Ninguna"),
             "Peligro" if req.integridad_estructural < 4 else ("Desgaste" if req.integridad_estructural < 8 else "Intacta"),
             indice_salud,
-            alerta_bloqueo
+            alerta_bloqueo,
+            req.anomalia_operativa,
+            req.integridad_estructural,
+            req.temperatura_trabajo
         ))
 
         conn.commit()
@@ -640,6 +697,27 @@ def procesar_inspeccion_ia(req: InspeccionRequest):
         raise he
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Fallo crítico en el procesamiento: {str(e)}")
+
+@app.get("/api/ia/diagnostico-detalle/{id_activo}")
+def obtener_diagnostico_detalle(id_activo: int):
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT num_anomalia, num_integridad, num_temperatura, var_frecuencia_uso, resultado_indice_salud, var_anomalia_operativa, var_integridad_estruct
+            FROM HISTORIAL_INSPECCIONES_IA
+            WHERE id_activo = ?
+            ORDER BY id_inspeccion DESC
+            LIMIT 1
+        """, (id_activo,))
+        detalle = cursor.fetchone()
+        conn.close()
+        
+        if not detalle:
+            return None
+        return dict(detalle)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 # Bloque de arranque de la aplicación usando Uvicorn
 if __name__ == "__main__":
