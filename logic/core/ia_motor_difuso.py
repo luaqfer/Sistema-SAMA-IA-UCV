@@ -15,6 +15,10 @@ class MotorDifusoMamdani:
         self.temperatura = ctrl.Antecedent(np.arange(0, 11, 1), 'temperatura')
         self.fugas = ctrl.Antecedent(np.arange(0, 11, 1), 'fugas')
         
+        self.vibracion = ctrl.Antecedent(np.arange(0, 11, 1), 'vibracion')
+        self.electrica = ctrl.Antecedent(np.arange(0, 11, 1), 'electrica')
+        self.consumibles = ctrl.Antecedent(np.arange(0, 11, 1), 'consumibles')
+        
         # Historial y Contabilidad
         self.fallas_previas = ctrl.Antecedent(np.arange(0, 11, 1), 'fallas_previas') # Bloqueos en 30 dias
         self.edad_operativa = ctrl.Antecedent(np.arange(0, 51, 1), 'edad_operativa') # Años
@@ -28,6 +32,9 @@ class MotorDifusoMamdani:
         self.integridad.automf(3, names=['peligro', 'desgaste', 'intacta']) # Ojo: Invertido
         self.temperatura.automf(3, names=['normal', 'tibia', 'critica'])
         self.fugas.automf(3, names=['ninguna', 'leve', 'grave'])
+        self.vibracion.automf(3, names=['ninguna', 'leve', 'severa'])
+        self.electrica.automf(3, names=['peligro', 'inestable', 'optima']) # Ojo: Invertido
+        self.consumibles.automf(3, names=['minimo', 'moderado', 'limite'])
         
         self.fallas_previas.automf(3, names=['nulas', 'esporadicas', 'cronicas'])
         
@@ -44,60 +51,65 @@ class MotorDifusoMamdani:
         self.simuladores = {}
 
         # CATEGORÍA 2 Y 5: MAQUINARIA INDUSTRIAL Y FLOTA
-        # El recalentamiento, fatiga (integridad estructural) y fugas son inhabilitantes.
         reglas_maq = [
             # Críticas
             ctrl.Rule(self.temperatura['critica'] | self.integridad['peligro'], self.salud['critica']),
             ctrl.Rule(self.fugas['grave'] | self.fallas_previas['cronicas'], self.salud['critica']),
             ctrl.Rule(self.edad_operativa['obsoleta'] & self.anomalia['severa'], self.salud['critica']),
+            ctrl.Rule(self.vibracion['severa'] | self.electrica['peligro'], self.salud['critica']),
             # Alertas
             ctrl.Rule(self.anomalia['moderada'] & self.temperatura['tibia'], self.salud['alerta']),
             ctrl.Rule(self.integridad['desgaste'] | self.uso['alto'], self.salud['alerta']),
+            ctrl.Rule(self.vibracion['leve'] | self.electrica['inestable'], self.salud['alerta']),
+            ctrl.Rule(self.consumibles['limite'], self.salud['alerta']),
             # Óptimas
-            ctrl.Rule(self.anomalia['ninguna'] & self.integridad['intacta'] & self.temperatura['normal'], self.salud['optima'])
+            ctrl.Rule(self.anomalia['ninguna'] & self.integridad['intacta'] & self.temperatura['normal'] & self.vibracion['ninguna'] & self.electrica['optima'], self.salud['optima'])
         ]
         self.simuladores['maquinaria'] = ctrl.ControlSystemSimulation(ctrl.ControlSystem(reglas_maq))
 
         # CATEGORÍA 3: TECNOLOGÍA Y TI (Equipos de Cómputo)
-        # La temperatura alta destruye equipos, fugas (agua en TI) es letal. La fatiga mecánica (integridad) es irrelevante.
         reglas_ti = [
             # Críticas
             ctrl.Rule(self.temperatura['critica'] | self.fugas['grave'], self.salud['critica']),
             ctrl.Rule(self.anomalia['severa'] & self.uso['alto'], self.salud['critica']),
+            ctrl.Rule(self.electrica['peligro'], self.salud['critica']),
             # Alertas
             ctrl.Rule(self.anomalia['moderada'] | self.temperatura['tibia'], self.salud['alerta']),
+            ctrl.Rule(self.electrica['inestable'], self.salud['alerta']),
             # Óptimas
-            ctrl.Rule(self.temperatura['normal'] & self.anomalia['ninguna'], self.salud['optima'])
+            ctrl.Rule(self.temperatura['normal'] & self.anomalia['ninguna'] & self.electrica['optima'], self.salud['optima'])
         ]
         self.simuladores['tecnologia'] = ctrl.ControlSystemSimulation(ctrl.ControlSystem(reglas_ti))
 
         # CATEGORÍA 1: INMUEBLES E INFRAESTRUCTURA
-        # La fatiga (integridad) es lo más crítico, la temperatura y el uso importan menos.
         reglas_inm = [
             # Críticas
             ctrl.Rule(self.integridad['peligro'], self.salud['critica']),
             ctrl.Rule(self.fugas['grave'], self.salud['critica']),
+            ctrl.Rule(self.electrica['peligro'], self.salud['critica']),
             # Alertas
             ctrl.Rule(self.integridad['desgaste'] | self.anomalia['moderada'], self.salud['alerta']),
             ctrl.Rule(self.edad_operativa['obsoleta'], self.salud['alerta']),
+            ctrl.Rule(self.electrica['inestable'], self.salud['alerta']),
             # Óptimas
-            ctrl.Rule(self.integridad['intacta'] & self.anomalia['ninguna'], self.salud['optima'])
+            ctrl.Rule(self.integridad['intacta'] & self.anomalia['ninguna'] & self.electrica['optima'], self.salud['optima'])
         ]
         self.simuladores['inmuebles'] = ctrl.ControlSystemSimulation(ctrl.ControlSystem(reglas_inm))
 
         # CATEGORÍA 4 Y OTROS: MOBILIARIO
-        # Desgaste físico estándar.
         reglas_mob = [
             # Críticas
             ctrl.Rule(self.anomalia['severa'] | self.integridad['peligro'], self.salud['critica']),
+            ctrl.Rule(self.consumibles['limite'], self.salud['critica']),
             # Alertas
             ctrl.Rule(self.integridad['desgaste'] | self.uso['alto'], self.salud['alerta']),
+            ctrl.Rule(self.consumibles['moderado'], self.salud['alerta']),
             # Óptimas
-            ctrl.Rule(self.anomalia['ninguna'] & self.integridad['intacta'], self.salud['optima'])
+            ctrl.Rule(self.anomalia['ninguna'] & self.integridad['intacta'] & self.consumibles['minimo'], self.salud['optima'])
         ]
         self.simuladores['mobiliario'] = ctrl.ControlSystemSimulation(ctrl.ControlSystem(reglas_mob))
 
-    def procesar_diagnostico_predictivo(self, val_uso: float, val_anomalia: float, val_integridad: float, val_temperatura: float, val_fugas: float, val_fallas_previas: float, val_edad: float, id_categoria: int = 4) -> dict:
+    def procesar_diagnostico_predictivo(self, val_uso: float, val_anomalia: float, val_integridad: float, val_temperatura: float, val_fugas: float, val_fallas_previas: float, val_edad: float, val_vibracion: float = 1.5, val_electrica: float = 9.0, val_consumibles: float = 1.5, id_categoria: int = 4) -> dict:
         try:
             # Seleccionar simulador por categoría
             if id_categoria in [2, 5]:
@@ -117,6 +129,9 @@ class MotorDifusoMamdani:
             simulador_activo.input['fugas'] = val_fugas
             simulador_activo.input['fallas_previas'] = val_fallas_previas
             simulador_activo.input['edad_operativa'] = val_edad
+            simulador_activo.input['vibracion'] = val_vibracion
+            simulador_activo.input['electrica'] = val_electrica
+            simulador_activo.input['consumibles'] = val_consumibles
 
             # Ejecutar el cálculo integral matemático
             simulador_activo.compute()

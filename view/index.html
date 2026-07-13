@@ -134,12 +134,39 @@
                         <thead class="sticky top-0 bg-slate-100 z-10 shadow-sm">
                             <tr class="bg-slate-100 text-slate-500 text-xs uppercase tracking-wider">
                                 <th class="p-4 font-semibold">QR ID</th>
-                                <th class="p-4 font-semibold">Máquina / Equipo</th>
+                                <th class="p-4 font-semibold">
+                                    <div class="flex flex-col gap-1">
+                                        <span>Máquina / Equipo</span>
+                                        <select id="filter-categoria" onchange="filtrarActivos()" class="text-xs font-normal border-slate-300 rounded p-1 text-slate-600 bg-white outline-none w-full max-w-[150px]">
+                                            <option value="">Todas las categorías</option>
+                                        </select>
+                                    </div>
+                                </th>
                                 <th class="p-4 font-semibold text-left">Valor</th>
                                 <th class="p-4 font-semibold text-left">Diagnóstico IA</th>
                                 <th class="p-4 font-semibold text-left">Mantenimiento Preventivo</th>
-                                <th class="p-4 font-semibold text-left">Estado de Operación</th>
-                                <th class="p-4 font-semibold">Disponibilidad</th>
+                                <th class="p-4 font-semibold text-left">
+                                    <div class="flex flex-col gap-1">
+                                        <span>Estado de Operación</span>
+                                        <select id="filter-estado-op" onchange="filtrarActivos()" class="text-xs font-normal border-slate-300 rounded p-1 text-slate-600 bg-white outline-none w-full max-w-[130px]">
+                                            <option value="">Todos los estados</option>
+                                            <option value="OPERATIVO">Operativo</option>
+                                            <option value="EN OBSERVACION">En Observación</option>
+                                            <option value="INOPERATIVO">Inoperativo</option>
+                                        </select>
+                                    </div>
+                                </th>
+                                <th class="p-4 font-semibold">
+                                    <div class="flex flex-col gap-1">
+                                        <span>Disponibilidad</span>
+                                        <select id="filter-disponibilidad" onchange="filtrarActivos()" class="text-xs font-normal border-slate-300 rounded p-1 text-slate-600 bg-white outline-none w-full max-w-[120px]">
+                                            <option value="">Todas</option>
+                                            <option value="DISPONIBLE">Disponible</option>
+                                            <option value="EN USO">En Uso</option>
+                                            <option value="BLOQUEADO">Bloqueado</option>
+                                        </select>
+                                    </div>
+                                </th>
                                 <th class="p-4 font-semibold text-center">Acción</th>
                             </tr>
                         </thead>
@@ -201,7 +228,7 @@
                     <label class="block text-slate-500 text-xs font-bold uppercase mb-1">Activo Detectado</label>
                     <input type="text" id="modal-activo-nombre" class="w-full bg-slate-100 border border-slate-300 rounded-lg p-2.5 font-bold text-slate-700" readonly>
                 </div>
-                <div>
+                <div id="campo-anomalia">
                     <label class="block text-slate-700 text-sm font-bold mb-2">1. Nivel de Anomalía Operativa</label>
                     <select id="select-anomalia" class="w-full bg-white border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none" required>
                         <option value="1.5">Ninguna (Operación fluida sin ruidos)</option>
@@ -209,7 +236,7 @@
                         <option value="9.0">Severa (Falla evidente, humo o trabas)</option>
                     </select>
                 </div>
-                <div>
+                <div id="campo-integridad">
                     <label class="block text-slate-700 text-sm font-bold mb-2">2. Condición Estructural / Chasis</label>
                     <select id="select-integridad" class="w-full bg-white border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none" required>
                         <option value="9.0">Intacta (Estructura sólida y segura)</option>
@@ -217,7 +244,7 @@
                         <option value="1.5">Peligro (Roturas graves, riesgo de colapso)</option>
                     </select>
                 </div>
-                <div>
+                <div id="campo-temperatura">
                     <label class="block text-slate-700 text-sm font-bold mb-2">3. Temperatura de Trabajo</label>
                     <select id="select-temperatura" class="w-full bg-white border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none" required>
                         <option value="2.0">Normal (Temperatura estable al tacto)</option>
@@ -225,12 +252,36 @@
                         <option value="9.5">Crítica (Recalentamiento o olor a quemado)</option>
                     </select>
                 </div>
-                <div>
+                <div id="campo-fugas">
                     <label class="block text-slate-700 text-sm font-bold mb-2">4. Fuga de Fluidos / Presión</label>
                     <select id="select-fugas" class="w-full bg-white border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none" required>
                         <option value="1.5">Ninguna (Totalmente estanco y seco)</option>
                         <option value="5.5">Leve (Goteo esporádico o transpiración)</option>
                         <option value="9.5">Grave (Chorro constante o pérdida rápida de presión)</option>
+                    </select>
+                </div>
+                <div id="campo-vibracion" class="hidden">
+                    <label class="block text-slate-700 text-sm font-bold mb-2">5. Nivel de Vibración / Resonancia</label>
+                    <select id="select-vibracion" class="w-full bg-white border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none">
+                        <option value="1.5">Ninguna (Operación suave y balanceada)</option>
+                        <option value="5.0">Leve (Vibración perceptible pero constante)</option>
+                        <option value="9.0">Severa (Sacudidas anormales o desbalanceo)</option>
+                    </select>
+                </div>
+                <div id="campo-electrica" class="hidden">
+                    <label class="block text-slate-700 text-sm font-bold mb-2">6. Integridad Eléctrica / Electrónica</label>
+                    <select id="select-electrica" class="w-full bg-white border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none">
+                        <option value="9.0">Óptima (Voltaje estable, sin cortes)</option>
+                        <option value="5.5">Inestable (Fluctuaciones o reinicios esporádicos)</option>
+                        <option value="1.5">Crítica (Cables expuestos o sobrecalentamiento)</option>
+                    </select>
+                </div>
+                <div id="campo-consumibles" class="hidden">
+                    <label class="block text-slate-700 text-sm font-bold mb-2">7. Desgaste de Consumibles</label>
+                    <select id="select-consumibles" class="w-full bg-white border border-slate-300 rounded-lg p-2.5 focus:ring-2 focus:ring-blue-500 outline-none">
+                        <option value="1.5">Mínimo (Componentes casi nuevos)</option>
+                        <option value="5.0">Moderado (Desgaste normal, dentro del límite)</option>
+                        <option value="9.0">Al Límite (Requiere reemplazo inmediato)</option>
                     </select>
                 </div>
                 <button type="submit" id="btn-submit-ia" class="w-full bg-blue-900 hover:bg-blue-800 text-white font-bold py-3 rounded-xl transition shadow">
@@ -558,6 +609,6 @@
         </div>
     </div>
 
-    <script src="js/app.js?v=7.5"></script>
+    <script src="js/app.js?v=7.8"></script>
 </body>
 </html>

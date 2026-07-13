@@ -47,6 +47,9 @@ class InspeccionRequest(BaseModel):
     integridad_estructural: float # Escala numérica de 0 a 10 desde la Web
     temperatura_trabajo: float
     fuga_fluidos: float
+    vibracion: float = 1.5
+    integridad_electrica: float = 9.0
+    desgaste_consumibles: float = 1.5
 
 class LoginRequest(BaseModel):
     usuario: str
@@ -650,6 +653,9 @@ def procesar_inspeccion_ia(req: InspeccionRequest):
             val_fugas=req.fuga_fluidos,
             val_fallas_previas=val_fallas_previas,
             val_edad=val_edad,
+            val_vibracion=req.vibracion,
+            val_electrica=req.integridad_electrica,
+            val_consumibles=req.desgaste_consumibles,
             id_categoria=activo["id_categoria"]
         )
 

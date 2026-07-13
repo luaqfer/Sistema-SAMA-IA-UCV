@@ -22,7 +22,7 @@ async function cargarActivos() {
         document.getElementById('server-status').className = "flex items-center gap-2 text-sm font-semibold text-green-400";
 
         let tabla = document.getElementById('tabla-activos');
-        tabla.innerHTML = '';
+        let htmlBuffer = '';
         let operativos = 0, observacion = 0, bloqueados = 0;
 
         activos.forEach(activo => {
@@ -68,8 +68,10 @@ async function cargarActivos() {
             }
             let mantTexto = `<span class="flex items-center gap-1 ${mantColor} text-xs"><span title="Faltan ${usosMant} usos para el servicio preventivo">${mantIcon} En ${usosMant} usos</span></span>`;
 
-            tabla.innerHTML += `
-                <tr class="hover:bg-slate-50">
+            let catData = activo.nombre_categoria || "Sin categoría";
+            
+            htmlBuffer += `
+                <tr class="hover:bg-slate-50" data-categoria="${catData}" data-estado-op="${estadoOpText}" data-disponibilidad="${estadoUsoText}">
                     <td class="p-4 font-mono text-slate-500 text-xs">${activo.codigo_qr}</td>
                     <td class="p-4 font-bold text-slate-800 flex flex-col">
                         <span>${activo.nombre_activo}</span>
@@ -87,13 +89,15 @@ async function cargarActivos() {
                         <button onclick="abrirModalDetalle(${activo.id_activo})" class="bg-slate-600 hover:bg-slate-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-sm inline-flex items-center gap-1">
                             📄 Detalles
                         </button>
-                        <button onclick="abrirModalInspeccion(${activo.id_activo}, '${activo.nombre_activo}', '${activo.codigo_qr}')" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-sm inline-flex items-center gap-1">
+                        <button onclick="abrirModalInspeccion(${activo.id_activo}, '${activo.nombre_activo}', '${activo.codigo_qr}', ${activo.id_categoria || 4})" class="bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg text-xs font-semibold transition shadow-sm inline-flex items-center gap-1">
                             🔍 Inspeccionar
                         </button>
                     </td>
                 </tr>
             `;
         });
+
+        tabla.innerHTML = htmlBuffer;
 
         document.getElementById('stat-total').innerText = activos.length;
         document.getElementById('stat-operativos').innerText = operativos;
@@ -102,6 +106,15 @@ async function cargarActivos() {
         document.getElementById('card-bloqueados').className = bloqueados > 0 ? "bg-white p-6 rounded-xl shadow border-l-4 border-red-500 pulse-red" : "bg-white p-6 rounded-xl shadow border-l-4 border-red-500";
         
         renderizarGraficoFinanciero(activos);
+        // Poblar select de categorías
+        const selectCategoria = document.getElementById('filter-categoria');
+        const categoriasUnicas = [...new Set(activos.map(a => a.nombre_categoria || "Sin categoría"))].sort();
+        // Preservar la primera opción ("Todas las categorías")
+        selectCategoria.innerHTML = '<option value="">Todas las categorías</option>';
+        categoriasUnicas.forEach(cat => {
+            selectCategoria.innerHTML += `<option value="${cat}">${cat}</option>`;
+        });
+
         cargarHistorialClinicoIA(); // Refrescar bitácora IA
     } catch (error) {
         document.getElementById('tabla-activos').innerHTML = `<tr><td colspan="5" class="p-8 text-center text-red-500 font-bold">⚠️ Error: SAMA Backend desconectado.</td></tr>`;
@@ -219,15 +232,31 @@ let estadoEscaner = 0; // 0: inactivo, 1: escaneando activo, 2: escaneando perso
 let qrActivoTemporal = null;
 
 /**
- * Filtra la tabla de activos en tiempo real usando el campo de búsqueda manual.
+ * Filtra la tabla de activos en tiempo real usando el campo de búsqueda manual y los filtros de columnas.
  */
 function filtrarActivos() {
     let textoBusqueda = document.getElementById('input-qr-manual').value.toLowerCase().trim();
+    let filterCat = document.getElementById('filter-categoria').value;
+    let filterEstOp = document.getElementById('filter-estado-op').value;
+    let filterDisp = document.getElementById('filter-disponibilidad').value;
+
     let filas = document.querySelectorAll('#tabla-activos tr');
     
     filas.forEach(fila => {
-        let textoFila = fila.innerText.toLowerCase();
-        if (textoFila.includes(textoBusqueda)) {
+        // Ignorar fila de "Conectando..." si existe
+        if (!fila.hasAttribute('data-categoria')) return;
+
+        let textoFila = fila.textContent.toLowerCase();
+        let catFila = fila.getAttribute('data-categoria');
+        let estOpFila = fila.getAttribute('data-estado-op');
+        let dispFila = fila.getAttribute('data-disponibilidad');
+
+        let matchTexto = textoFila.includes(textoBusqueda);
+        let matchCat = filterCat === "" || catFila === filterCat;
+        let matchEstOp = filterEstOp === "" || estOpFila === filterEstOp;
+        let matchDisp = filterDisp === "" || dispFila === filterDisp;
+
+        if (matchTexto && matchCat && matchEstOp && matchDisp) {
             fila.style.display = "";
         } else {
             fila.style.display = "none";
@@ -323,7 +352,7 @@ function onScanFailure(error) { /* Ignorar errores de enfoque */ }
 function procesarCodigoEscaneado(codigoQR) {
     const maquina = inventarioGlobal.find(a => a.codigo_qr === codigoQR);
     if (maquina) {
-        abrirModalInspeccion(maquina.id_activo, maquina.nombre_activo, maquina.codigo_qr);
+        abrirModalInspeccion(maquina.id_activo, maquina.nombre_activo, maquina.codigo_qr, maquina.id_categoria || 4);
         document.getElementById('input-qr-manual').value = '';
     } else {
         alert(`SAMA Alerta: El código [${codigoQR}] no está registrado.`);
@@ -331,10 +360,36 @@ function procesarCodigoEscaneado(codigoQR) {
 }
 
 // 3. IA Y DIAGNÓSTICO
-function abrirModalInspeccion(id_activo, nombre, qr) {
+function abrirModalInspeccion(id_activo, nombre, qr, id_categoria) {
     document.getElementById('modal-activo-id').value = id_activo;
     document.getElementById('modal-activo-nombre').value = nombre;
     document.getElementById('modal-qr-label').innerText = "QR: " + qr;
+
+    // Restablecer visibilidad
+    document.getElementById('campo-anomalia').classList.remove('hidden');
+    document.getElementById('campo-integridad').classList.remove('hidden');
+    document.getElementById('campo-temperatura').classList.remove('hidden');
+    document.getElementById('campo-fugas').classList.remove('hidden');
+    document.getElementById('campo-vibracion').classList.remove('hidden');
+    document.getElementById('campo-electrica').classList.remove('hidden');
+    document.getElementById('campo-consumibles').classList.remove('hidden');
+
+    // Ocultar campos irrelevantes según la categoría
+    id_categoria = parseInt(id_categoria) || 4;
+    if (id_categoria === 1) { // Inmuebles
+        document.getElementById('campo-temperatura').classList.add('hidden');
+        document.getElementById('campo-vibracion').classList.add('hidden');
+        document.getElementById('campo-consumibles').classList.add('hidden');
+    } else if (id_categoria === 3) { // Tecnología
+        document.getElementById('campo-integridad').classList.add('hidden');
+        document.getElementById('campo-vibracion').classList.add('hidden');
+        document.getElementById('campo-consumibles').classList.add('hidden');
+    } else if (id_categoria === 4) { // Mobiliario
+        document.getElementById('campo-temperatura').classList.add('hidden');
+        document.getElementById('campo-fugas').classList.add('hidden');
+        document.getElementById('campo-vibracion').classList.add('hidden');
+        document.getElementById('campo-electrica').classList.add('hidden');
+    }
 
     document.getElementById('form-ia').reset();
     document.getElementById('form-ia').classList.remove('hidden');
@@ -368,7 +423,10 @@ async function ejecutarDiagnosticoIA(event) {
             anomalia_operativa: parseFloat(document.getElementById('select-anomalia').value),
             integridad_estructural: parseFloat(document.getElementById('select-integridad').value),
             temperatura_trabajo: parseFloat(document.getElementById('select-temperatura').value),
-            fuga_fluidos: parseFloat(document.getElementById('select-fugas').value)
+            fuga_fluidos: parseFloat(document.getElementById('select-fugas').value),
+            vibracion: parseFloat(document.getElementById('select-vibracion').value),
+            integridad_electrica: parseFloat(document.getElementById('select-electrica').value),
+            desgaste_consumibles: parseFloat(document.getElementById('select-consumibles').value)
         };
 
         const response = await fetch(`${API_URL}/api/predict`, {
