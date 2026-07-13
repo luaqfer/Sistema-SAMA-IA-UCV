@@ -3,13 +3,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SAMA Intelligent System | Panel Predictivo</title>
+    <title>SAMA Intelligent System | Panel Predictivo </title>
     
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    
     <link rel="stylesheet" href="css/styles.css">
 </head>
 <body class="bg-slate-100 font-sans text-slate-800 overflow-hidden" id="body-main">
@@ -84,10 +83,10 @@
     <div class="p-6 max-w-[1600px] mx-auto h-[calc(100vh-80px)] flex flex-col">
         
         <!-- CUADRÍCULA PANORÁMICA DE 3 COLUMNAS -->
-        <div class="grid grid-cols-1 xl:grid-cols-12 gap-6 h-full flex-1 min-h-0">
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-6 h-full flex-1 min-h-0">
             
             <!-- Columna Izquierda: KPIs y Gráfico Financiero (25% ancho en desktop) -->
-            <div class="xl:col-span-3 flex flex-col space-y-6 overflow-y-auto scrollbar-hide pr-2">
+            <div class="lg:col-span-3 flex flex-col space-y-6 overflow-y-auto scrollbar-hide pr-2">
             
             <!-- Tarjetas de resumen en Grid 2x2 -->
             <div class="grid grid-cols-2 gap-4">
@@ -124,7 +123,7 @@
             </div>
 
             <!-- Columna Central: Tabla Principal de Inventario (50% ancho en desktop) -->
-            <div class="xl:col-span-6">
+            <div class="lg:col-span-6">
             <div class="bg-white rounded-xl shadow overflow-hidden h-full max-h-[80vh] flex flex-col">
                 <div class="p-5 border-b border-slate-200 bg-slate-50 flex justify-between items-center z-10">
                     <h2 class="text-lg font-bold text-slate-700">Inventario Patrimonial en Red Local</h2>
@@ -153,15 +152,17 @@
         </div>
 
             <!-- Columna Derecha: Panel de Historial Clínico IA (25% ancho en desktop) -->
-            <div class="xl:col-span-3 hidden xl:block">
-            <div class="bg-white rounded-xl shadow p-5 flex flex-col h-full max-h-[80vh]">
-                <h2 class="text-md font-bold text-slate-800 mb-3 flex items-center gap-2">🏥 Historial Clínico IA</h2>
-                <div id="lista-alertas-ia" class="flex flex-col gap-3 overflow-y-auto pr-2 scrollbar-thin flex-1">
-                    <p class="text-xs text-slate-400 text-center italic py-4">Cargando bitácora...</p>
+            <div class="lg:col-span-3">
+                <div class="bg-white rounded-xl shadow p-5 flex flex-col h-full max-h-[80vh]">
+                    <h2 class="text-md font-bold text-slate-800 mb-3 flex items-center gap-2">🏥 Historial Clínico IA</h2>
+                    <div id="lista-alertas-ia" class="flex flex-col gap-3 overflow-y-auto pr-2 scrollbar-thin flex-1">
+                        <p class="text-xs text-slate-400 text-center italic py-4">Cargando bitácora...</p>
+                    </div>
                 </div>
             </div>
-        </div>
-    </main>
+
+        </div> <!-- Fin de la cuadrícula 12 columnas -->
+    </div> <!-- Fin del contenedor principal -->
 
     <!-- MODAL ESCÁNER -->
     <div id="modal-scanner" class="fixed inset-0 bg-slate-900/90 backdrop-blur-sm hidden flex flex-col items-center justify-center p-4 z-50">
@@ -557,6 +558,6 @@
         </div>
     </div>
 
-    <script src="js/app.js?v=7.4"></script>
+    <script src="js/app.js?v=7.5"></script>
 </body>
 </html>
