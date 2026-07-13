@@ -40,48 +40,89 @@ class MotorDifusoMamdani:
         self.salud['alerta'] = fuzz.trimf(self.salud.universe, [30, 50, 70])
         self.salud['optima'] = fuzz.trimf(self.salud.universe, [60, 100, 100])
 
-        # 4. BASE DE CONOCIMIENTOS (Reglas Mamdani)
-        reglas = []
-        
-        # Reglas Óptimas (Camino feliz)
-        reglas.append(ctrl.Rule(self.anomalia['ninguna'] & self.integridad['intacta'] & self.fugas['ninguna'] & self.temperatura['normal'], self.salud['optima']))
-        
-        # Reglas Críticas Indiscutibles (Cualquier factor mortal)
-        reglas.append(ctrl.Rule(self.integridad['peligro'], self.salud['critica']))
-        reglas.append(ctrl.Rule(self.temperatura['critica'], self.salud['critica']))
-        reglas.append(ctrl.Rule(self.fugas['grave'], self.salud['critica']))
-        reglas.append(ctrl.Rule(self.fallas_previas['cronicas'], self.salud['critica']))
-        
-        # Combinación de factores moderados que llevan a Crítica
-        reglas.append(ctrl.Rule(self.edad_operativa['obsoleta'] & self.anomalia['severa'], self.salud['critica']))
-        reglas.append(ctrl.Rule(self.edad_operativa['obsoleta'] & self.fugas['leve'], self.salud['alerta']))
-        reglas.append(ctrl.Rule(self.fallas_previas['esporadicas'] & self.temperatura['tibia'], self.salud['alerta']))
-        
-        # Reglas de Alerta (Desgastes y advertencias)
-        reglas.append(ctrl.Rule(self.uso['alto'] & self.anomalia['moderada'], self.salud['alerta']))
-        reglas.append(ctrl.Rule(self.integridad['desgaste'], self.salud['alerta']))
-        reglas.append(ctrl.Rule(self.uso['bajo'] & self.anomalia['ninguna'] & self.edad_operativa['madura'], self.salud['optima']))
+        # 4. BASE DE CONOCIMIENTOS (Reglas Mamdani por Categoría)
+        self.simuladores = {}
 
-        # 5. CONSTRUCCIÓN DEL SISTEMA DE CONTROL
-        sistema_control = ctrl.ControlSystem(reglas)
-        self.simulador = ctrl.ControlSystemSimulation(sistema_control)
+        # CATEGORÍA 2 Y 5: MAQUINARIA INDUSTRIAL Y FLOTA
+        # El recalentamiento, fatiga (integridad estructural) y fugas son inhabilitantes.
+        reglas_maq = [
+            # Críticas
+            ctrl.Rule(self.temperatura['critica'] | self.integridad['peligro'], self.salud['critica']),
+            ctrl.Rule(self.fugas['grave'] | self.fallas_previas['cronicas'], self.salud['critica']),
+            ctrl.Rule(self.edad_operativa['obsoleta'] & self.anomalia['severa'], self.salud['critica']),
+            # Alertas
+            ctrl.Rule(self.anomalia['moderada'] & self.temperatura['tibia'], self.salud['alerta']),
+            ctrl.Rule(self.integridad['desgaste'] | self.uso['alto'], self.salud['alerta']),
+            # Óptimas
+            ctrl.Rule(self.anomalia['ninguna'] & self.integridad['intacta'] & self.temperatura['normal'], self.salud['optima'])
+        ]
+        self.simuladores['maquinaria'] = ctrl.ControlSystemSimulation(ctrl.ControlSystem(reglas_maq))
 
-    def procesar_diagnostico_predictivo(self, val_uso: float, val_anomalia: float, val_integridad: float, val_temperatura: float, val_fugas: float, val_fallas_previas: float, val_edad: float) -> dict:
+        # CATEGORÍA 3: TECNOLOGÍA Y TI (Equipos de Cómputo)
+        # La temperatura alta destruye equipos, fugas (agua en TI) es letal. La fatiga mecánica (integridad) es irrelevante.
+        reglas_ti = [
+            # Críticas
+            ctrl.Rule(self.temperatura['critica'] | self.fugas['grave'], self.salud['critica']),
+            ctrl.Rule(self.anomalia['severa'] & self.uso['alto'], self.salud['critica']),
+            # Alertas
+            ctrl.Rule(self.anomalia['moderada'] | self.temperatura['tibia'], self.salud['alerta']),
+            # Óptimas
+            ctrl.Rule(self.temperatura['normal'] & self.anomalia['ninguna'], self.salud['optima'])
+        ]
+        self.simuladores['tecnologia'] = ctrl.ControlSystemSimulation(ctrl.ControlSystem(reglas_ti))
+
+        # CATEGORÍA 1: INMUEBLES E INFRAESTRUCTURA
+        # La fatiga (integridad) es lo más crítico, la temperatura y el uso importan menos.
+        reglas_inm = [
+            # Críticas
+            ctrl.Rule(self.integridad['peligro'], self.salud['critica']),
+            ctrl.Rule(self.fugas['grave'], self.salud['critica']),
+            # Alertas
+            ctrl.Rule(self.integridad['desgaste'] | self.anomalia['moderada'], self.salud['alerta']),
+            ctrl.Rule(self.edad_operativa['obsoleta'], self.salud['alerta']),
+            # Óptimas
+            ctrl.Rule(self.integridad['intacta'] & self.anomalia['ninguna'], self.salud['optima'])
+        ]
+        self.simuladores['inmuebles'] = ctrl.ControlSystemSimulation(ctrl.ControlSystem(reglas_inm))
+
+        # CATEGORÍA 4 Y OTROS: MOBILIARIO
+        # Desgaste físico estándar.
+        reglas_mob = [
+            # Críticas
+            ctrl.Rule(self.anomalia['severa'] | self.integridad['peligro'], self.salud['critica']),
+            # Alertas
+            ctrl.Rule(self.integridad['desgaste'] | self.uso['alto'], self.salud['alerta']),
+            # Óptimas
+            ctrl.Rule(self.anomalia['ninguna'] & self.integridad['intacta'], self.salud['optima'])
+        ]
+        self.simuladores['mobiliario'] = ctrl.ControlSystemSimulation(ctrl.ControlSystem(reglas_mob))
+
+    def procesar_diagnostico_predictivo(self, val_uso: float, val_anomalia: float, val_integridad: float, val_temperatura: float, val_fugas: float, val_fallas_previas: float, val_edad: float, id_categoria: int = 4) -> dict:
         try:
-            # Inyectar valores al simulador
-            self.simulador.input['uso'] = val_uso
-            self.simulador.input['anomalia'] = val_anomalia
-            self.simulador.input['integridad'] = val_integridad
-            self.simulador.input['temperatura'] = val_temperatura
-            self.simulador.input['fugas'] = val_fugas
-            self.simulador.input['fallas_previas'] = val_fallas_previas
-            self.simulador.input['edad_operativa'] = val_edad
+            # Seleccionar simulador por categoría
+            if id_categoria in [2, 5]:
+                simulador_activo = self.simuladores['maquinaria']
+            elif id_categoria == 3:
+                simulador_activo = self.simuladores['tecnologia']
+            elif id_categoria == 1:
+                simulador_activo = self.simuladores['inmuebles']
+            else:
+                simulador_activo = self.simuladores['mobiliario']
+
+            # Inyectar valores al simulador seleccionado
+            simulador_activo.input['uso'] = val_uso
+            simulador_activo.input['anomalia'] = val_anomalia
+            simulador_activo.input['integridad'] = val_integridad
+            simulador_activo.input['temperatura'] = val_temperatura
+            simulador_activo.input['fugas'] = val_fugas
+            simulador_activo.input['fallas_previas'] = val_fallas_previas
+            simulador_activo.input['edad_operativa'] = val_edad
 
             # Ejecutar el cálculo integral matemático
-            self.simulador.compute()
+            simulador_activo.compute()
 
             # Extraer el resultado escalar (Defuzzificación por Centroide)
-            resultado_pct = round(self.simulador.output['salud'], 2)
+            resultado_pct = round(simulador_activo.output['salud'], 2)
 
             # Reglas de Negocio para el Estado Recomendado
             bloqueo = True if resultado_pct <= 40.0 else False

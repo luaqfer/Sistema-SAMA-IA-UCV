@@ -612,7 +612,7 @@ def procesar_inspeccion_ia(req: InspeccionRequest):
         cursor = conn.cursor()
 
         # 1. Validación de existencia del activo
-        cursor.execute("SELECT nombre_activo, estado_operativo, fecha_compra FROM ACTIVOS WHERE id_activo = ?", (req.id_activo,))
+        cursor.execute("SELECT nombre_activo, estado_operativo, fecha_compra, id_categoria FROM ACTIVOS WHERE id_activo = ?", (req.id_activo,))
         activo = cursor.fetchone()
         if not activo:
             conn.close()
@@ -649,7 +649,8 @@ def procesar_inspeccion_ia(req: InspeccionRequest):
             val_temperatura=req.temperatura_trabajo,
             val_fugas=req.fuga_fluidos,
             val_fallas_previas=val_fallas_previas,
-            val_edad=val_edad
+            val_edad=val_edad,
+            id_categoria=activo["id_categoria"]
         )
 
         indice_salud = resultado_ia["indice_salud_pct"]
